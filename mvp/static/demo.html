@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS Demo — Selection Strategy Simulator</title>
+  <meta name="description" content="BreedOS MVP demo: simulate artificial selection, drift, inbreeding, diversity loss, and CRISPR edit seeding.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="/">Landing</a>
+      <a href="/customer-discovery">Discovery</a>
+    </div>
+  </nav>
+
+  <main class="wrap demo-shell">
+    <div class="card" style="margin-bottom:18px">
+      <div class="kicker">MVP v0.6 — early decision engine</div>
+      <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
+      <p class="lede">
+        Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
+      </p>
+      <p class="note">
+        Small populations are intentionally allowed. Try N=8 or N=12 to see rapid drift and fixation. Runs are manual: if parameters are unchanged, recalculation is skipped. The Run simulation button shows worker-pool progress. Solid lines are the current run; dotted lines show the previous run.
+      </p>
+    </div>
+
+    <div class="demo-grid">
+      <aside class="card sticky-panel">
+        <h2 style="font-size:28px">Simulation inputs</h2>
+
+        <div class="preset-row" aria-label="Simulation presets">
+          <button class="btn tiny" type="button" data-preset="tiny">Tiny drift</button>
+          <button class="btn tiny" type="button" data-preset="balanced">Balanced</button>
+          <button class="btn tiny" type="button" data-preset="large">Large fast</button>
+          <button class="btn tiny" type="button" data-preset="crispr">CRISPR seed</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="field">
+            <label>
+              <span>Random seed <span class="tip" tabindex="0" data-tip="Controls stochastic repeatability. Same seed + same parameters should produce the same run; change it to see another random trajectory.">?</span></span>
+              <span>reproducible</span>
+            </label>
+            <div class="inline-input">
+              <input id="seed" type="number" value="20260505">
+              <button id="randomSeedBtn" class="btn icon" type="button" title="Generate a new random seed">↻</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Population size <span class="tip" tabindex="0" data-tip="Number of diploid organisms in each generation. Very small values are allowed to demonstrate genetic drift, founder effects, and fixation; realistic breeding programs usually need far larger populations.">?</span></span>
+              <span>2–5000</span>
+            </label>
+            <input id="population_size" type="number" min="2" max="5000" value="400">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Markers <span class="tip" tabindex="0" data-tip="Number of simulated biallelic genomic marker loci. Larger marker counts make diversity/drift metrics smoother but increase runtime.">?</span></span>
+              <span>10–5000</span>
+            </label>
+            <input id="markers" type="number" min="10" max="5000" value="900">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>QTL count <span class="tip" tabindex="0" data-tip="Number of causal loci that affect the target trait. These are a subset of markers and define the polygenic architecture in this simplified MVP.">?</span></span>
+              <span>causal loci</span>
+            </label>
+            <input id="qtl_count" type="number" min="1" value="45">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Generations <span class="tip" tabindex="0" data-tip="How many selection cycles to simulate. More generations make long-term drift, inbreeding, fixation, and diversity loss more visible.">?</span></span>
+              <span>1–200</span>
+            </label>
+            <input id="generations" type="number" min="1" max="200" value="30">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Selection intensity <span class="tip" tabindex="0" data-tip="Percent of the population selected as the base parent pool. Lower values mean stronger selection pressure and usually faster gain with higher bottleneck risk.">?</span></span>
+              <span>% parents</span>
+            </label>
+            <input id="selection_percent" type="number" min="0.1" max="100" step="0.5" value="10">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Heritability <span class="tip" tabindex="0" data-tip="Fraction of phenotype variance explained by genetics in this simplified model. Low heritability adds more environmental noise to selection.">?</span></span>
+              <span>0–1</span>
+            </label>
+            <input id="heritability" type="number" min="0.01" max="1" step="0.05" value="0.4">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Mutation rate <span class="tip" tabindex="0" data-tip="Per-allele mutation probability per generation. Keep it low for breeding-style simulations; raise it only to stress-test long runs.">?</span></span>
+              <span>per allele</span>
+            </label>
+            <input id="mutation_rate" type="number" min="0" max="0.01" step="0.00001" value="0.00005">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Strategy set <span class="tip" tabindex="0" data-tip="Core runs the investor-friendly set: neutral drift baseline, aggressive, diversity-preserving, balanced, and CRISPR-aware balanced if enabled. Advanced adds random baseline, phenotype truncation, genomic mock, OCS-like constraint, cross planner, and edit introgression.">?</span></span>
+              <span>core / advanced</span>
+            </label>
+            <select id="strategy_set">
+              <option value="core" selected>core</option>
+              <option value="advanced">advanced</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Replicates <span class="tip" tabindex="0" data-tip="Monte Carlo repetitions per strategy. More replicates turn one pretty curve into estimated probabilities: risk of inbreeding breach, diversity collapse, and rare useful allele loss.">?</span></span>
+              <span>1–100</span>
+            </label>
+            <input id="replicates" type="number" min="1" max="100" value="3">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Worker count <span class="tip" tabindex="0" data-tip="Parallel worker pool size. Use 0 for auto based on CPU cores. Increase carefully for large population/marker/generation settings.">?</span></span>
+              <span>0 = auto</span>
+            </label>
+            <input id="worker_count" type="number" min="0" max="64" value="0">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Inbreeding limit <span class="tip" tabindex="0" data-tip="Risk threshold for the probability that final inbreeding exceeds this value. Lower means more conservative strategy ranking.">?</span></span>
+              <span>risk threshold</span>
+            </label>
+            <input id="inbreeding_limit" type="number" min="0.01" max="1" step="0.01" value="0.25">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Diversity loss limit <span class="tip" tabindex="0" data-tip="Risk threshold for diversity collapse. The simulator treats collapse as final diversity loss / inbreeding above this value relative to the initial population.">?</span></span>
+              <span>risk threshold</span>
+            </label>
+            <input id="diversity_loss_limit" type="number" min="0.01" max="1" step="0.01" value="0.30">
+          </div>
+
+          <div class="checkbox-row field-like">
+            <input id="crispr_enabled" type="checkbox" checked>
+            <label for="crispr_enabled">Enable minimal CRISPR integration <span class="tip" tabindex="0" data-tip="Adds a decision-layer CRISPR scenario. It ranks candidate loci and seeds favorable alleles into part of the founding population. This is not guide design or wet-lab instruction.">?</span></label>
+          </div>
+
+          <div class="field">
+            <label>
+              <span>CRISPR candidate edits <span class="tip" tabindex="0" data-tip="Maximum number of favorable low-frequency loci to rank as hypothetical edit candidates for the decision-layer demonstration.">?</span></span>
+              <span>decision-layer</span>
+            </label>
+            <input id="crispr_edits" type="number" min="0" max="20" value="3">
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Edit intro percent <span class="tip" tabindex="0" data-tip="Percent of founder individuals that receive the hypothetical favorable edits in the CRISPR seed strategy. Higher values make the edited allele spread faster but can create an artificial bottleneck.">?</span></span>
+              <span>founders seeded</span>
+            </label>
+            <input id="crispr_intro_percent" type="number" min="0" max="100" step="0.5" value="8">
+          </div>
+
+
+          <div class="button-grid">
+            <button id="runBtn" class="btn primary" type="button">Run simulation</button>
+            <button id="clearCompareBtn" class="btn" type="button">Clear comparison</button>
+            <button id="copySummaryBtn" class="btn" type="button">Copy summary</button>
+            <button id="exportJsonBtn" class="btn" type="button">Export JSON</button>
+          </div>
+          <div id="status" class="status"></div>
+        </div>
+      </aside>
+
+      <section class="results">
+        <div id="summary" class="summary-grid"></div>
+
+        <div class="card">
+          <h2 style="font-size:28px">Decision engine output</h2>
+          <div id="decisionPanel"></div>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size:24px">Run notes</h2>
+          <div id="notes" class="notes-list"></div>
+        </div>
+
+        <div class="card chart-card">
+          <div class="chart-title"><h3>Genetic gain</h3><small>trait mean vs baseline</small></div>
+          <canvas id="chart_gain" width="900" height="300"></canvas>
+          <div id="legend_gain" class="legend"></div>
+        </div>
+
+        <div class="grid2">
+          <div class="card chart-card">
+            <div class="chart-title"><h3>Diversity</h3><small>mean heterozygosity</small></div>
+            <canvas id="chart_diversity" width="600" height="280"></canvas>
+            <div id="legend_diversity" class="legend"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title"><h3>Inbreeding risk</h3><small>approx. diversity loss</small></div>
+            <canvas id="chart_inbreeding" width="600" height="280"></canvas>
+            <div id="legend_inbreeding" class="legend"></div>
+          </div>
+        </div>
+
+        <div class="grid2">
+          <div class="card chart-card">
+            <div class="chart-title"><h3>Allele-frequency drift</h3><small>mean abs. shift from start</small></div>
+            <canvas id="chart_drift" width="600" height="280"></canvas>
+            <div id="legend_drift" class="legend"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title"><h3>Rare useful loci lost</h3><small>warning metric</small></div>
+            <canvas id="chart_lost" width="600" height="280"></canvas>
+            <div id="legend_lost" class="legend"></div>
+          </div>
+        </div>
+
+        <div class="card chart-card">
+          <div class="chart-title"><h3>Fixed loci</h3><small>rapid fixation becomes obvious in tiny populations</small></div>
+          <canvas id="chart_fixed" width="900" height="300"></canvas>
+          <div id="legend_fixed" class="legend"></div>
+        </div>
+
+        <div class="card chart-card">
+          <div class="chart-title"><h3>Pareto decision chart</h3><small>genetic gain vs combined risk probability</small></div>
+          <canvas id="chart_pareto" width="900" height="340"></canvas>
+          <p class="note">Upper-left is usually better: more gain with less combined risk. White outline marks non-dominated Pareto candidates.</p>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size:28px">CRISPR edit candidates</h2>
+          <p class="note">
+            This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rank</th><th>Locus</th><th>Effect</th><th>Allele freq.</th><th>Gain score</th><th>Risk</th><th>Decision</th>
+                </tr>
+              </thead>
+              <tbody id="editTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 style="font-size:28px">Strategy recommendations</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Strategy</th>
+                  <th>Rank</th>
+                  <th>Score</th>
+                  <th>Final gain ±σ</th>
+                  <th>Diversity ±σ</th>
+                  <th>Inbreeding ±σ</th>
+                  <th>Risk</th>
+                  <th>P(inb/div/loss)</th>
+                  <th>Fixed loci</th>
+                  <th>Parents</th>
+                  <th>Pareto</th>
+                  <th>Δ vs previous</th>
+                  <th>Recommendation</th>
+                </tr>
+              </thead>
+              <tbody id="strategyTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

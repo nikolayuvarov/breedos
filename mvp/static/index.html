@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS — Decision engine for artificial selection</title>
+  <meta name="description" content="BreedOS is an AI decision engine for artificial selection, CRISPR-enabled breeding, and multi-generation selection strategy.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="#problem">Problem</a>
+      <a href="#solution">Solution</a>
+      <a href="#crispr">CRISPR layer</a>
+      <a href="/demo">Demo</a>
+      <a href="/customer-discovery">Discovery</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="kicker">AI decision engine for artificial selection</div>
+          <h1>The control system for breeding.</h1>
+          <p class="lede">
+            BreedOS helps breeders and bioengineers choose what to cross, what to edit, and what to keep — while preserving long-term genetic diversity.
+          </p>
+          <div class="actions">
+            <a class="btn primary" href="/demo">Run the MVP demo</a>
+            <a class="btn" href="#pitch">Read the pitch</a>
+          </div>
+          <div class="badge-row">
+            <span class="badge">genomic selection</span>
+            <span class="badge">evolutionary simulation</span>
+            <span class="badge">drift / inbreeding</span>
+            <span class="badge">CRISPR-enabled breeding</span>
+            <span class="badge">multi-generation planning</span>
+          </div>
+        </div>
+        <div class="card visual" aria-label="BreedOS product diagram">
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="node n1"></div>
+          <div class="node n2"></div>
+          <div class="node n3"></div>
+          <div class="node n4"></div>
+          <div class="center-badge">
+            <div>
+              <strong>BreedOS</strong>
+              <small>future-generation selection strategy</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem" class="section wrap">
+      <div class="grid2">
+        <div>
+          <h2>Breeding is becoming data-rich but decision-poor.</h2>
+          <p>
+            Breeding teams now generate genomic data, phenotypes, field trials, pedigree records, environment measurements, and increasingly gene-editing data. But the core decision is still hard: what should we cross, what should we edit, what should we keep, and what happens over the next 10 or 20 generations?
+          </p>
+        </div>
+        <div class="card">
+          <div class="quote">
+            Breeding is not a prediction problem. It is a multi-generation control problem over an evolving population.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="solution" class="section wrap">
+      <h2>BreedOS is the decision layer.</h2>
+      <div class="grid3">
+        <div class="card mini">
+          <h3>Selection Digital Twin</h3>
+          <p>Simulate genetic gain, allele-frequency drift, diversity loss, inbreeding, bottlenecks, and future selection optionality.</p>
+        </div>
+        <div class="card mini">
+          <h3>Genomic Selection Planner</h3>
+          <p>Rank candidate parents, compare crosses, and choose selection strategies under long-term constraints.</p>
+        </div>
+        <div class="card mini">
+          <h3>CRISPR Strategy Layer</h3>
+          <p>Prioritize candidate edits and test whether an edit, a cross, or a combined strategy creates the best population trajectory.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="crispr" class="section wrap">
+      <div class="card">
+        <h2>CRISPR gives biology a write function. BreedOS decides what to write.</h2>
+        <p>
+          The first MVP does not design guide RNAs and does not provide wet-lab protocols. Instead, it demonstrates the correct product layer: edit-aware selection planning. Candidate edits are ranked by expected trait value, current allele frequency, and population-risk logic. The selected edits can be seeded into a simulated population, then propagated through balanced selection.
+        </p>
+        <div class="flow" style="margin-top:18px">
+          <div class="card mini"><strong>Read</strong><p>Genotypes, phenotypes, pedigree, environment, candidate variants.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Decide</strong><p>Cross, edit, keep, reject, or preserve as diversity reserve.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Steer</strong><p>Simulate the population trajectory before committing resources.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pitch" class="section wrap">
+      <div class="grid2">
+        <div class="card">
+          <h2>One-line pitch</h2>
+          <p class="lede">
+            BreedOS is the decision engine for artificial selection, helping breeding teams optimize genetic gain across generations without losing the diversity that makes future improvement possible.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Why now</h2>
+          <ul class="clean">
+            <li>Sequencing made biological populations readable.</li>
+            <li>CRISPR and precision breeding made biology writable.</li>
+            <li>AI and cheap compute make multi-generation biological decision systems possible.</li>
+            <li>The bottleneck is moving from data generation to decision intelligence.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap">
+      <div class="card">
+        <h2>Initial beachhead</h2>
+        <p>
+          Crop and agricultural biotech breeding teams working on climate-resilient traits: drought tolerance, heat tolerance, disease resistance, salinity tolerance, yield stability, and resource efficiency.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="/demo">Run selection simulator</a>
+          <a class="btn" href="/customer-discovery">Open customer discovery page</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.6 — decision-layer simulator, not a wet-lab protocol.</div>
+  </footer>
+</body>
+</html>

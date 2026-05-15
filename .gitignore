@@ -1,0 +1,21 @@
+# Compiled binaries
+breedos
+breedos.exe
+breedos-*
+*.test
+*.out
+
+# Go build artifacts
+/vendor/
+/dist/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local config
+*.local
+.env
