@@ -6,7 +6,7 @@ BreedOS helps breeding teams compare selection strategies across multiple genera
 
 ## Core idea
 
-Breeding is not a prediction problem. It is a multi-generation **control problem** over an evolving population.
+Breeding is not only a prediction problem. It is, more fundamentally, a multi-generation **control problem** over an evolving population.
 
 Most breeding software optimizes the next generation's prediction. BreedOS optimizes the trajectory. Aggressive selection can mathematically destroy the future search space — diversity collapses, rare beneficial alleles fixate or vanish, inbreeding rises. By generation 15, the population can stop responding to selection.
 
