@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-17
+
+### Changed
+- Landing page (`mvp/static/index.html`) refined for public release at the canonical domain:
+  - Title and meta description rewritten to match the canonical one-liner ("decision engine for selection strategies in CRISPR-enabled crop breeding").
+  - Dropped the "AI" prefix from the hero kicker for consistency with README, CHANGELOG, and the public pack.
+  - Replaced the secondary hero CTA "Read the pitch" with "View on GitHub" pointing directly to the source repository.
+  - Genomic Selection Planner module flagged as roadmap; description softened to acknowledge that production integration is scheduled for the program build (MVP currently demonstrates the kernel only).
+  - CRISPR section heading softened: "CRISPR gives breeders a limited but powerful write function" (was "biology a write function") and the body adds an explicit non-replacement framing against Benchling, Synthego, and CRISPResso.
+  - Footer adds a direct "View source on GitHub" link.
+- Updated MVP version strings (landing footer, demo kicker, run notes) from `v0.6.2` to `v0.6.3`.
+
 ## [0.6.2] - 2026-05-17
 
 ### Fixed
