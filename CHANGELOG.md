@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-17
+
+### Added
+- `install.sh` — systemd-service installer for the BreedOS MVP binary. Generic enough to manage any Go binary placed next to it, but tuned for breedos defaults (binds `0.0.0.0:8080`, working directory = the script's directory). Supports subcommands `install` / `uninstall` / `info` / `help`. Interactive prompts for arguments, run user, and working directory. Prints status/log/control commands after install and starts the service.
+- README section "Run as a systemd service" with end-to-end deployment recipe.
+
+### Changed
+- Updated MVP version strings (landing footer, demo kicker, run notes) from `v0.6.3` to `v0.6.4`.
+
 ## [0.6.3] - 2026-05-17
 
 ### Changed

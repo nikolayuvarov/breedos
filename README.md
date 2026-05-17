@@ -60,6 +60,29 @@ Then open `http://127.0.0.1:8080/`.
 - `/demo` — interactive simulation UI
 - `/customer-discovery` — discovery framework view
 
+## Run as a systemd service
+
+For server deployment on a systemd-based Linux host, the repository ships an installer (`install.sh`) that wraps the binary in a managed service:
+
+```
+git clone https://github.com/NikolayUvarov/breedos.git
+cd breedos
+(cd mvp && go build -o ../breedos .)
+sudo ./install.sh install
+```
+
+The installer prompts for command-line arguments (default for breedos: `-listen 0.0.0.0:8080`), the user to run as, and the working directory. After install it starts the service and prints the management commands.
+
+Manage and inspect:
+
+```
+sudo systemctl status   breedos
+sudo systemctl restart  breedos
+sudo journalctl -u breedos -f
+```
+
+To inspect the unit file and recent logs without root: `./install.sh info`. To remove: `sudo ./install.sh uninstall`. Full options: `./install.sh help`.
+
 ## API
 
 - `GET  /health` — health check
@@ -77,6 +100,7 @@ breedos/
 ├── CHANGELOG.md
 ├── LICENSE
 ├── .gitignore
+├── install.sh        systemd service installer (Linux)
 └── mvp/
     ├── go.mod
     ├── main.go         simulation engine + HTTP server
