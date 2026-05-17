@@ -385,7 +385,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.6.1 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, and marks Pareto-optimal trade-offs.",
+		"BreedOS v0.6.2 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, and marks Pareto-optimal trade-offs.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -415,7 +415,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.6.1 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.6.2 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -515,7 +515,7 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 	}
 	aggregated := make([]StrategyResult, strategyCount)
 	for i, cfg := range strategies {
-		aggregated[i] = aggregateReplicates(req, cfg, resultsByStrategy[i])
+		aggregated[i] = aggregateReplicates(req, cfg, resultsByStrategy[i], baseDiversity)
 	}
 	return aggregated
 }
@@ -555,7 +555,7 @@ func conservativeEditCandidates(edits []EditCandidate) []EditCandidate {
 	return out
 }
 
-func aggregateReplicates(req SimRequest, cfg strategyConfig, reps []StrategyResult) StrategyResult {
+func aggregateReplicates(req SimRequest, cfg strategyConfig, reps []StrategyResult, baseDiversity float64) StrategyResult {
 	if len(reps) == 0 {
 		return StrategyResult{Name: cfg.Name, Code: cfg.Code, Summary: cfg.Summary}
 	}
@@ -592,7 +592,11 @@ func aggregateReplicates(req SimRequest, cfg strategyConfig, reps []StrategyResu
 		if f.Inbreeding >= req.InbreedingLimit {
 			inbreedingBreaches++
 		}
-		if f.Inbreeding >= req.DiversityLossLimit {
+		diversityLoss := 0.0
+		if baseDiversity > 0 {
+			diversityLoss = (baseDiversity - f.Diversity) / baseDiversity
+		}
+		if diversityLoss >= req.DiversityLossLimit {
 			diversityCollapses++
 		}
 	}
