@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-18
+
+### Added
+- `mvp/build.sh` — portable static-binary build script. Uses `CGO_ENABLED=0 go build -trimpath -ldflags='-s -w'` to produce a fully static binary with no glibc dependency, runnable on any reasonably modern Linux regardless of the build host's glibc version. Default output is `../breedos` (next to `install.sh`).
+- `install.sh` pre-flight check: runs the binary briefly and parses common dynamic-loader errors (`GLIBC`, `symbol not found`, `cannot load shared object`, `exec format error`). Fails fast with a clear remediation pointing to `./mvp/build.sh` or `CGO_ENABLED=0 go build`.
+- `install.sh` post-start verification: after `systemctl start`, polls `systemctl is-active` for up to 5 seconds; if the service does not reach `active`, dumps recent journal output and aborts with a clear error instead of silently reporting success.
+
+### Changed
+- `install.sh` refactored from positional arguments to a flag-based CLI: `--binary`, `--service`, `--args`, `--user`, `--workdir`, `--description`, `--non-interactive`, `--force` (with short aliases `-b -s -a -u -w -d -y -f`). Each install/uninstall/info subcommand parses its own flags.
+- `install.sh` no longer hard-codes binary-specific runtime defaults. The previous version assumed `-listen 0.0.0.0:8080` for breedos; now an empty `--args` means empty args and the binary uses its own defaults. The systemd unit `Description=` is generic (`<service> service`) by default, overridable via `--description`. The `Documentation=` field is no longer hard-coded to the breedos repository URL.
+- Updated README "Run as a systemd service" section: now references `mvp/build.sh`, shows both interactive and non-interactive install invocations, and documents the empty-args / binary-defaults convention.
+- Updated MVP version strings (landing footer, demo kicker, run notes) from `v0.6.4` to `v0.6.5`.
+
 ## [0.6.4] - 2026-05-17
 
 ### Added

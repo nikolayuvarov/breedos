@@ -62,16 +62,29 @@ Then open `http://127.0.0.1:8080/`.
 
 ## Run as a systemd service
 
-For server deployment on a systemd-based Linux host, the repository ships an installer (`install.sh`) that wraps the binary in a managed service:
+For server deployment on a systemd-based Linux host, the repository ships:
+
+- **`mvp/build.sh`** — builds a portable static binary (`CGO_ENABLED=0`, no glibc version pinning, works on any reasonably modern Linux).
+- **`install.sh`** — generic flag-based systemd-service installer with `install` / `uninstall` / `info` / `help` subcommands.
 
 ```
 git clone https://github.com/NikolayUvarov/breedos.git
 cd breedos
-(cd mvp && go build -o ../breedos .)
-sudo ./install.sh install
+./mvp/build.sh                    # writes ./breedos next to install.sh
+sudo ./install.sh install         # interactive (prompts for args, user, workdir)
 ```
 
-The installer prompts for command-line arguments (default for breedos: `-listen 0.0.0.0:8080`), the user to run as, and the working directory. After install it starts the service and prints the management commands.
+Or non-interactive with flags:
+
+```
+sudo ./install.sh install \
+    --user backup \
+    --workdir /var/lib/breedos \
+    --args "-listen 0.0.0.0:8080" \
+    --non-interactive
+```
+
+The installer makes no binary-specific assumptions. If you leave args empty, breedos uses its own defaults (binds `0.0.0.0:8080`). After install it verifies the service reached `active` state and prints the management commands; if the service crashed on start it dumps the recent journal and aborts with a clear error.
 
 Manage and inspect:
 
@@ -102,6 +115,7 @@ breedos/
 ├── .gitignore
 ├── install.sh        systemd service installer (Linux)
 └── mvp/
+    ├── build.sh        portable static build (CGO_ENABLED=0)
     ├── go.mod
     ├── main.go         simulation engine + HTTP server
     ├── main_test.go    tests
