@@ -121,7 +121,6 @@ breedos/
     └── static/         frontend (vanilla JS, no framework)
         ├── index.html
         ├── demo.html
-        ├── customer_discovery.html
         ├── style.css
         └── app.js
 ```

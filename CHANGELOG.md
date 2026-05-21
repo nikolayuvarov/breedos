@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.7] - 2026-05-21
+
+### Fixed
+- Removed two residual references to the deleted `customer-discovery` page that v0.6.6 missed:
+  - `mvp/static/index.html` line 138: the secondary CTA button "Open customer discovery page" linking to `/customer-discovery` (would have 404'd on the live deployment). Replaced with a "View on GitHub" link.
+  - `README.md` project-structure tree: removed the `customer_discovery.html` entry from the static/ listing.
+
+### Changed
+- Updated MVP version strings (landing footer, demo kicker, run notes) from `v0.6.6` to `v0.6.7`.
+
 ## [0.6.6] - 2026-05-18
 
 ### Removed
