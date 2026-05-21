@@ -63,6 +63,9 @@ type DecisionSummary struct {
 	MissingDataWarnings  []string     `json:"missing_data_warnings"`
 	NextAnalysis         string       `json:"next_analysis"`
 	SummaryText          string       `json:"summary_text"`
+	HonestyBanner        string       `json:"honesty_banner"`
+	Limitations          []string     `json:"limitations"`
+	WhatCouldBeWrong     []string     `json:"what_could_be_wrong"`
 }
 
 type Tradeoff struct {
@@ -408,7 +411,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.1 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, marks Pareto-optimal trade-offs, emits a structured decision report (tradeoffs, avoid list, assumptions, missing-data warnings, next-analysis suggestion, summary text), and watches for a sibling <binary>.UPDATE file for self-update via the --self-check contract.",
+		"BreedOS v0.7.2 emits a structured decision report (tradeoffs, avoid list, key assumptions, missing-data warnings, model limitations, what-could-be-wrong, next-analysis suggestion, summary text) and a one-line honesty banner. Monte Carlo replicates, risk probabilities, Pareto trade-offs, and the self-update watcher (--self-check + .UPDATE file) are inherited from v0.7.1.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -438,7 +441,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.1 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.2 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -726,6 +729,9 @@ func buildDecisionSummary(req SimRequest, results []StrategyResult, baseDiversit
 	d.KeyAssumptions = buildKeyAssumptions(req)
 	d.MissingDataWarnings = buildMissingDataWarnings(req, baseDiversity)
 	d.NextAnalysis = buildNextAnalysis(req, results, best, bestGain, pareto)
+	d.HonestyBanner = buildHonestyBanner(req)
+	d.Limitations = buildLimitations(req)
+	d.WhatCouldBeWrong = buildWhatCouldBeWrong(req, results, best, bestGain)
 	d.SummaryText = buildSummaryText(req, d, best, bestGain, lowest)
 	return d
 }
@@ -845,6 +851,61 @@ func buildMissingDataWarnings(req SimRequest, baseDiversity float64) []string {
 	}
 	if baseDiversity < 0.1 {
 		out = append(out, fmt.Sprintf("Starting diversity is low (%.4f); founder population may be near a bottleneck before any selection is applied.", baseDiversity))
+	}
+	return out
+}
+
+func buildHonestyBanner(req SimRequest) string {
+	parts := []string{"Decision-layer simulator on synthetic data"}
+	if req.CrisprEnabled {
+		parts = append(parts, "minimal CRISPR demo (not guide design, not wet-lab protocol)")
+	}
+	parts = append(parts, "not a deployable recommendation without your own genotype/phenotype data and domain review")
+	return strings.Join(parts, " — ") + "."
+}
+
+func buildLimitations(req SimRequest) []string {
+	out := []string{
+		"Diploid biallelic markers; no copy-number variation, no structural variants.",
+		"Simplified Mendelian inheritance; recombination map is uniform, no chromosome structure.",
+		"Additive trait architecture only; no dominance, no epistasis, no pleiotropy.",
+		"No genotype-by-environment (GxE) interaction; trait expression treated as environment-invariant.",
+		"No production genomic-prediction model (GBLUP / Bayesian / ML); the predictor is a mock signal for demonstration only.",
+		"No real germplasm, pedigree, or field-trial data ingested — every run uses a generated synthetic population.",
+		"Risk thresholds are user-set, not learned from program history.",
+	}
+	if req.CrisprEnabled {
+		out = append(out,
+			"CRISPR layer ranks candidate loci by expected gain / allele frequency / diversity risk — it does not design guide RNAs, score off-targets, or model regulatory feasibility.",
+			"Edits are propagated through simulation; biological validation is out of scope.",
+		)
+	}
+	return out
+}
+
+func buildWhatCouldBeWrong(req SimRequest, results []StrategyResult, best, bestGain StrategyResult) []string {
+	out := make([]string, 0, 6)
+	if best.Code != bestGain.Code {
+		gap := bestGain.Final.GeneticGain - best.Final.GeneticGain
+		out = append(out, fmt.Sprintf("Risk-adjusted leader '%s' is not the max-gain strategy. If your program tolerates higher inbreeding-breach probability than the %.2f threshold used here, '%s' (+%.4f gain) may be the right call instead.",
+			best.Name, req.InbreedingLimit, bestGain.Name, gap))
+	}
+	if req.Replicates < 10 {
+		out = append(out, fmt.Sprintf("With only %d Monte Carlo replicates, the strategy ranking may flip under a different random seed. Re-run with ≥10 replicates before treating this as a stable recommendation.", req.Replicates))
+	}
+	if req.PopulationSize < 100 {
+		out = append(out, fmt.Sprintf("Small population (N=%d) means drift dominates many outcomes — real programs with N≥500 will see lower variance and the ranking may shift.", req.PopulationSize))
+	}
+	out = append(out,
+		"If real heritability differs substantially from the assumed h²="+fmt.Sprintf("%.2f", req.Heritability)+", selection response and risk both scale — re-run with the heritability you actually estimate for the target trait.",
+		"If the trait has dominance, epistasis, or pleiotropy (this MVP assumes additivity), gains may not stack as predicted and edit-driven changes may carry correlated trait effects.",
+		"If population substructure (subpopulations, family clusters) is present and not modelled, effective population size is lower than nominal and diversity-loss risk is underestimated.",
+		"If your selection intensity cannot be maintained in practice (logistics, budget, field capacity), the realised gain trajectory will be slower than simulated.",
+	)
+	if req.CrisprEnabled {
+		out = append(out,
+			"If candidate edits have off-target effects or regulatory hurdles (not modelled here), the CRISPR-enabled strategy may not be deployable even when it dominates in simulation.",
+		)
 	}
 	return out
 }

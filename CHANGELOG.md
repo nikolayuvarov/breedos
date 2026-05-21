@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-05-21
+
+### Added — Scientific Honesty / Trust Layer (closes `issues-breedos/06`)
+
+The Decision Report now includes three honesty-oriented fields and the demo carries a visible banner so domain users and reviewers can see the scope and limits of the simulator at a glance.
+
+`DecisionSummary` response object adds:
+
+- `honesty_banner` — one-line banner: "Decision-layer simulator on synthetic data — minimal CRISPR demo (when enabled) — not a deployable recommendation without your own genotype/phenotype data and domain review."
+- `limitations` — explicit modelling limits: diploid biallelic markers, simplified inheritance, additive trait architecture (no dominance / epistasis / pleiotropy), no GxE, mock genomic-prediction signal, no real germplasm or pedigree ingested, user-set risk thresholds. CRISPR-mode adds explicit "not guide-RNA design / not off-target scoring / not regulatory feasibility" lines.
+- `what_could_be_wrong` — context-aware list of scenarios that would invalidate the recommendation: risk-adjusted-vs-max-gain disagreement under a different inbreeding tolerance, low replicate count, small population, mis-estimated heritability, non-additive trait architecture, population substructure, infeasible selection intensity, CRISPR off-target / regulatory hurdles.
+
+### Added — Demo honesty banner
+
+`demo.html` carries a visible `.honesty-banner` above the title card that states the simulator's scope ("Decision-layer simulator on synthetic data. Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review.") and points readers to the new Decision Report sections.
+
+### Added — Decision Report sections
+
+`renderDecisionPanel` in `app.js` now renders two new `<details>` blocks in the Decision Report:
+
+- **What could make this recommendation wrong?** — open by default; orange accent (`decision-what-could-be-wrong` class).
+- **Model limitations** — collapsed by default; blue accent (`decision-limitations` class).
+
+A small inline honesty banner is also rendered at the top of the Decision Report panel itself (`decision-honesty-banner` class), so users who jump straight to the report still see the scope statement.
+
 ### Changed
+- `buildNotes` in `main.go` now reflects v0.7.2 in the run-notes string and budget-guard note.
+- Version strings bumped `v0.7.1` → `v0.7.2` in `main.go` run notes, landing footer (`index.html`), and demo kicker (`demo.html`).
+
+### Operational changes (from previous Unreleased)
 - `deploy_breedos.sh` now reads its defaults from a local `.env` file next to the script (gitignored). A new tracked `.env.example` documents the format. Override precedence: positional `$1` > `BREEDOS_DEPLOY_TARGET` env var (current shell or `.env`). When no target is configured and no `.env` exists, the script prints actionable instructions for creating one and exits non-zero. Help text is shown on `-h` / `--help` / `help`.
+
+### Not in this release
+- No algorithm changes (selection, simulation, Pareto, risk, self-update contract all unchanged from v0.7.1).
+- No API breaking changes — the three new `DecisionSummary` fields are additive.
+- Domain-expert review (issues-breedos/11) and constraint engine (issues-breedos/03) remain open.
 
 ## [0.7.1] - 2026-05-21
 

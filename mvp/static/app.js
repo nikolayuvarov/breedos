@@ -277,8 +277,12 @@ function renderDecisionPanel(data) {
   const avoid = (d.avoid_strategies || []).map(a => `<li><strong>${escapeHtml(labels[a.code] || a.name)}</strong> — ${escapeHtml(a.reason)}</li>`).join('');
   const warnings = (d.missing_data_warnings || []).map(w => `<li>${escapeHtml(w)}</li>`).join('');
   const assumptions = (d.key_assumptions || []).map(a => `<li>${escapeHtml(a)}</li>`).join('');
+  const wrong = (d.what_could_be_wrong || []).map(w => `<li>${escapeHtml(w)}</li>`).join('');
+  const limitations = (d.limitations || []).map(l => `<li>${escapeHtml(l)}</li>`).join('');
   const next = d.next_analysis ? `<p class="decision-next"><strong>Recommended next analysis:</strong> ${escapeHtml(d.next_analysis)}</p>` : '';
+  const honesty = d.honesty_banner ? `<div class="decision-honesty-banner">${escapeHtml(d.honesty_banner)}</div>` : '';
   el.innerHTML = `
+    ${honesty}
     <div class="decision-grid">
       <div class="decision-card"><span>Recommended</span><strong>${escapeHtml(best ? (labels[best.code] || best.name) : '-')}</strong><small>risk-adjusted score ${best ? fmt(best.final.risk_adjusted_score) : '-'}</small></div>
       <div class="decision-card"><span>Max gain</span><strong>${escapeHtml(bestGain ? (labels[bestGain.code] || bestGain.name) : '-')}</strong><small>${bestGain ? fmt(bestGain.final.genetic_gain) : '-'} final gain</small></div>
@@ -289,8 +293,10 @@ function renderDecisionPanel(data) {
     ${next}
     ${tradeoffs ? `<details class="decision-section" open><summary><strong>Top trade-offs</strong> (${(d.tradeoffs || []).length})</summary><ul class="decision-list">${tradeoffs}</ul></details>` : ''}
     ${avoid ? `<details class="decision-section" open><summary><strong>Strategies to avoid</strong> (${(d.avoid_strategies || []).length})</summary><ul class="decision-list">${avoid}</ul></details>` : ''}
+    ${wrong ? `<details class="decision-section decision-what-could-be-wrong" open><summary><strong>What could make this recommendation wrong?</strong> (${(d.what_could_be_wrong || []).length})</summary><ul class="decision-list">${wrong}</ul></details>` : ''}
     ${warnings ? `<details class="decision-section decision-warnings"><summary><strong>⚠ Missing-data warnings</strong> (${(d.missing_data_warnings || []).length})</summary><ul class="decision-list">${warnings}</ul></details>` : ''}
     ${assumptions ? `<details class="decision-section"><summary><strong>Key assumptions</strong> (${(d.key_assumptions || []).length})</summary><ul class="decision-list">${assumptions}</ul></details>` : ''}
+    ${limitations ? `<details class="decision-section decision-limitations"><summary><strong>Model limitations</strong> (${(d.limitations || []).length})</summary><ul class="decision-list">${limitations}</ul></details>` : ''}
   `;
 }
 
