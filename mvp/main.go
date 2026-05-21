@@ -50,12 +50,31 @@ type SimResponse struct {
 }
 
 type DecisionSummary struct {
-	BestRiskAdjustedCode string   `json:"best_risk_adjusted_code"`
-	BestRiskAdjustedName string   `json:"best_risk_adjusted_name"`
-	BestGainCode         string   `json:"best_gain_code"`
-	LowestRiskCode       string   `json:"lowest_risk_code"`
-	ParetoCodes          []string `json:"pareto_codes"`
-	Interpretation       []string `json:"interpretation"`
+	BestRiskAdjustedCode string       `json:"best_risk_adjusted_code"`
+	BestRiskAdjustedName string       `json:"best_risk_adjusted_name"`
+	BestGainCode         string       `json:"best_gain_code"`
+	LowestRiskCode       string       `json:"lowest_risk_code"`
+	ParetoCodes          []string     `json:"pareto_codes"`
+	Interpretation       []string     `json:"interpretation"`
+	Tradeoffs            []Tradeoff   `json:"tradeoffs"`
+	AvoidStrategies      []AvoidEntry `json:"avoid_strategies"`
+	KeyAssumptions       []string     `json:"key_assumptions"`
+	MissingDataWarnings  []string     `json:"missing_data_warnings"`
+	NextAnalysis         string       `json:"next_analysis"`
+	SummaryText          string       `json:"summary_text"`
+}
+
+type Tradeoff struct {
+	A     string `json:"a"`
+	B     string `json:"b"`
+	Theme string `json:"theme"`
+	Note  string `json:"note"`
+}
+
+type AvoidEntry struct {
+	Code   string `json:"code"`
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
 }
 
 type StrategyResult struct {
@@ -373,7 +392,7 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 	reportProgress(progress, 5, "initial population, candidate edits, and strategy set ready")
 	results := simulateStrategiesDecisionEngine(req, strategies, initial, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, candidates, progress)
 	annotateDecisionScores(results)
-	decision := buildDecisionSummary(results)
+	decision := buildDecisionSummary(req, results, baseDiversity)
 	reportProgress(progress, 98, "building response")
 	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity)}, nil
 }
@@ -382,7 +401,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.6.7 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, and marks Pareto-optimal trade-offs.",
+		"BreedOS v0.7.0 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, marks Pareto-optimal trade-offs, and emits a structured decision report (tradeoffs, avoid list, assumptions, missing-data warnings, next-analysis suggestion, summary text).",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -412,7 +431,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.6.7 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.0 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -659,7 +678,7 @@ func combinedRisk(f FinalStats) float64 {
 	return 0.45*f.ProbabilityInbreedingBreach + 0.35*f.ProbabilityDiversityCollapse + 0.20*f.ProbabilityRareUsefulLoss
 }
 
-func buildDecisionSummary(results []StrategyResult) DecisionSummary {
+func buildDecisionSummary(req SimRequest, results []StrategyResult, baseDiversity float64) DecisionSummary {
 	if len(results) == 0 {
 		return DecisionSummary{}
 	}
@@ -682,7 +701,196 @@ func buildDecisionSummary(results []StrategyResult) DecisionSummary {
 		}
 	}
 	best, bestGain, lowest := results[bestRiskIdx], results[bestGainIdx], results[lowestRiskIdx]
-	return DecisionSummary{BestRiskAdjustedCode: best.Code, BestRiskAdjustedName: best.Name, BestGainCode: bestGain.Code, LowestRiskCode: lowest.Code, ParetoCodes: pareto, Interpretation: []string{fmt.Sprintf("Recommended risk-adjusted strategy: %s (score %.4f, rank #%d).", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank), fmt.Sprintf("Maximum final gain is produced by %s, but compare its risk probabilities before treating it as deployable.", bestGain.Name), fmt.Sprintf("Lowest combined risk is produced by %s.", lowest.Name), "Use the Pareto chart to choose a trade-off, not a single metric. Real BreedOS should optimize under explicit constraints supplied by the breeding program."}}
+	d := DecisionSummary{
+		BestRiskAdjustedCode: best.Code,
+		BestRiskAdjustedName: best.Name,
+		BestGainCode:         bestGain.Code,
+		LowestRiskCode:       lowest.Code,
+		ParetoCodes:          pareto,
+		Interpretation: []string{
+			fmt.Sprintf("Recommended risk-adjusted strategy: %s (score %.4f, rank #%d).", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank),
+			fmt.Sprintf("Maximum final gain is produced by %s, but compare its risk probabilities before treating it as deployable.", bestGain.Name),
+			fmt.Sprintf("Lowest combined risk is produced by %s.", lowest.Name),
+			"Use the Pareto chart to choose a trade-off, not a single metric. Real BreedOS should optimize under explicit constraints supplied by the breeding program.",
+		},
+	}
+	d.Tradeoffs = buildTradeoffs(results, best, bestGain, lowest, pareto)
+	d.AvoidStrategies = buildAvoidList(results)
+	d.KeyAssumptions = buildKeyAssumptions(req)
+	d.MissingDataWarnings = buildMissingDataWarnings(req, baseDiversity)
+	d.NextAnalysis = buildNextAnalysis(req, results, best, bestGain, pareto)
+	d.SummaryText = buildSummaryText(req, d, best, bestGain, lowest)
+	return d
+}
+
+func buildTradeoffs(results []StrategyResult, best, bestGain, lowest StrategyResult, pareto []string) []Tradeoff {
+	out := make([]Tradeoff, 0, 3)
+	if bestGain.Code != best.Code {
+		out = append(out, Tradeoff{
+			A: bestGain.Code, B: best.Code, Theme: "gain_vs_risk_adjusted",
+			Note: fmt.Sprintf("%s delivers higher final gain (%.4f) but %s wins on risk-adjusted score (%.4f vs %.4f) — the %.4f gain difference costs %.4f extra combined risk.",
+				bestGain.Name, bestGain.Final.GeneticGain, best.Name,
+				best.Final.RiskAdjustedScore, bestGain.Final.RiskAdjustedScore,
+				bestGain.Final.GeneticGain-best.Final.GeneticGain,
+				combinedRisk(bestGain.Final)-combinedRisk(best.Final)),
+		})
+	}
+	if lowest.Code != best.Code {
+		out = append(out, Tradeoff{
+			A: best.Code, B: lowest.Code, Theme: "risk_adjusted_vs_min_risk",
+			Note: fmt.Sprintf("%s balances gain and risk (combined risk %.4f) whereas %s prioritises minimum risk (combined risk %.4f) at a cost of %.4f gain.",
+				best.Name, combinedRisk(best.Final), lowest.Name,
+				combinedRisk(lowest.Final), best.Final.GeneticGain-lowest.Final.GeneticGain),
+		})
+	}
+	if len(pareto) >= 2 {
+		a, b := findByCode(results, pareto[0]), findByCode(results, pareto[1])
+		if a != nil && b != nil {
+			out = append(out, Tradeoff{
+				A: a.Code, B: b.Code, Theme: "pareto_pair",
+				Note: fmt.Sprintf("%s and %s are both Pareto-optimal — neither dominates. Pick by priority: %s gives gain %.4f / risk %.4f, %s gives gain %.4f / risk %.4f.",
+					a.Name, b.Name, a.Name, a.Final.GeneticGain, combinedRisk(a.Final),
+					b.Name, b.Final.GeneticGain, combinedRisk(b.Final)),
+			})
+		}
+	} else {
+		aggr, divers := findByCode(results, "aggressive"), findByCode(results, "diversity")
+		if aggr != nil && divers != nil {
+			out = append(out, Tradeoff{
+				A: aggr.Code, B: divers.Code, Theme: "aggressive_vs_diversity",
+				Note: fmt.Sprintf("%s pursues fast gain (%.4f) but burns diversity (collapse probability %.4f); %s preserves diversity (collapse probability %.4f) at slower gain (%.4f).",
+					aggr.Name, aggr.Final.GeneticGain, aggr.Final.ProbabilityDiversityCollapse,
+					divers.Name, divers.Final.ProbabilityDiversityCollapse, divers.Final.GeneticGain),
+			})
+		}
+	}
+	if len(out) > 3 {
+		out = out[:3]
+	}
+	return out
+}
+
+func buildAvoidList(results []StrategyResult) []AvoidEntry {
+	out := make([]AvoidEntry, 0)
+	for _, s := range results {
+		risk := combinedRisk(s.Final)
+		if risk < 0.5 || s.ParetoOptimal {
+			continue
+		}
+		reasons := make([]string, 0, 3)
+		if s.Final.ProbabilityInbreedingBreach >= 0.5 {
+			reasons = append(reasons, fmt.Sprintf("inbreeding-breach probability %.2f", s.Final.ProbabilityInbreedingBreach))
+		}
+		if s.Final.ProbabilityDiversityCollapse >= 0.5 {
+			reasons = append(reasons, fmt.Sprintf("diversity-collapse probability %.2f", s.Final.ProbabilityDiversityCollapse))
+		}
+		if s.Final.ProbabilityRareUsefulLoss >= 0.5 {
+			reasons = append(reasons, fmt.Sprintf("rare-allele-loss probability %.2f", s.Final.ProbabilityRareUsefulLoss))
+		}
+		if len(reasons) == 0 {
+			reasons = append(reasons, fmt.Sprintf("combined risk %.2f", risk))
+		}
+		out = append(out, AvoidEntry{
+			Code: s.Code, Name: s.Name,
+			Reason: fmt.Sprintf("Not Pareto-optimal and %s.", strings.Join(reasons, "; ")),
+		})
+	}
+	return out
+}
+
+func buildKeyAssumptions(req SimRequest) []string {
+	out := []string{
+		"Synthetic population; no real genotype or phenotype data ingested.",
+		"Mock genomic-selection signal; production genomic prediction (GBLUP/Bayesian/ML) not yet integrated.",
+		"Additive trait architecture; no dominance or epistasis modelled.",
+		fmt.Sprintf("Heritability h² = %.2f and selection percent = %g%% applied uniformly across generations.", req.Heritability, req.SelectionPercent),
+		fmt.Sprintf("Risk thresholds: inbreeding ≥ %.2f flagged as breach; diversity loss ≥ %.2f relative to baseline flagged as collapse.", req.InbreedingLimit, req.DiversityLossLimit),
+		"Discrete non-overlapping generations; cohort-based selection.",
+	}
+	if req.CrisprEnabled && req.CrisprEdits > 0 {
+		out = append(out, fmt.Sprintf("CRISPR seed: %d candidate edits introduced into %g%% of the founding population.", req.CrisprEdits, req.CrisprIntroPercent))
+	}
+	return out
+}
+
+func buildMissingDataWarnings(req SimRequest, baseDiversity float64) []string {
+	out := make([]string, 0)
+	if req.Replicates < 5 {
+		out = append(out, fmt.Sprintf("Only %d Monte Carlo replicates — uncertainty is wide; consider rerunning with ≥10 for deployable decisions.", req.Replicates))
+	}
+	if req.PopulationSize < 50 {
+		out = append(out, fmt.Sprintf("Small population (N=%d) amplifies drift; outcomes may be dominated by stochastic sampling rather than selection.", req.PopulationSize))
+	}
+	if req.PopulationSize < 10 {
+		out = append(out, "N<10 is a stress-test regime, not a realistic breeding program.")
+	}
+	if req.Heritability < 0.1 {
+		out = append(out, fmt.Sprintf("Very low heritability (h²=%.2f) — selection response will be small and noisy.", req.Heritability))
+	}
+	if req.Heritability > 0.9 {
+		out = append(out, fmt.Sprintf("Very high heritability (h²=%.2f) — uncommon for complex agricultural traits.", req.Heritability))
+	}
+	if req.MutationRate == 0 {
+		out = append(out, "Mutation rate is 0 — no new variation introduced; long-term response may plateau due to fixation.")
+	}
+	if req.Generations < 5 {
+		out = append(out, fmt.Sprintf("Short horizon (%d generations); long-term diversity loss may not have surfaced yet.", req.Generations))
+	}
+	if baseDiversity < 0.1 {
+		out = append(out, fmt.Sprintf("Starting diversity is low (%.4f); founder population may be near a bottleneck before any selection is applied.", baseDiversity))
+	}
+	return out
+}
+
+func buildNextAnalysis(req SimRequest, results []StrategyResult, best, bestGain StrategyResult, pareto []string) string {
+	if best.Code == bestGain.Code {
+		return fmt.Sprintf("Strategy '%s' wins on both maximum gain and risk-adjusted score in this run. Confirm robustness by varying random seed across 3-5 runs before treating as deployable.", best.Name)
+	}
+	if len(pareto) >= 3 {
+		return fmt.Sprintf("%d strategies are Pareto-optimal — the recommendation is sensitive to weighting. Consider tighter constraints (lower inbreeding limit, lower diversity-loss limit) to narrow the set.", len(pareto))
+	}
+	if combinedRisk(bestGain.Final) >= 0.5 {
+		return fmt.Sprintf("Best-gain strategy '%s' has combined risk %.2f. Either accept the risk-adjusted leader as the deployable choice or explore narrower selection intensity / added diversity constraints.", bestGain.Name, combinedRisk(bestGain.Final))
+	}
+	if req.Replicates < 10 {
+		return fmt.Sprintf("Recommendation is consistent in this run; confirm by re-running with replicates=%d (≥10) to tighten uncertainty intervals.", req.Replicates+5)
+	}
+	return "Confirm by re-running with a different random seed and verify strategy ranking remains stable. If stable, sweep selection_percent ±5% to inspect sensitivity."
+}
+
+func buildSummaryText(req SimRequest, d DecisionSummary, best, bestGain, lowest StrategyResult) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "BreedOS decision report (synthetic; N=%d, replicates=%d, generations=%d). ",
+		req.PopulationSize, req.Replicates, req.Generations)
+	fmt.Fprintf(&b, "Recommended (risk-adjusted): %s (score %.4f, rank #%d). ", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank)
+	fmt.Fprintf(&b, "Max gain: %s (%.4f). Lowest risk: %s (combined risk %.4f). ", bestGain.Name, bestGain.Final.GeneticGain, lowest.Name, combinedRisk(lowest.Final))
+	if len(d.ParetoCodes) > 0 {
+		fmt.Fprintf(&b, "Pareto-optimal: %s. ", strings.Join(d.ParetoCodes, ", "))
+	}
+	if len(d.Tradeoffs) > 0 {
+		fmt.Fprintf(&b, "Key trade-off — %s. ", d.Tradeoffs[0].Note)
+	}
+	if len(d.AvoidStrategies) > 0 {
+		names := make([]string, 0, len(d.AvoidStrategies))
+		for _, a := range d.AvoidStrategies {
+			names = append(names, a.Name)
+		}
+		fmt.Fprintf(&b, "Avoid: %s. ", strings.Join(names, ", "))
+	}
+	if len(d.MissingDataWarnings) > 0 {
+		fmt.Fprintf(&b, "Caveats: %s. ", d.MissingDataWarnings[0])
+	}
+	fmt.Fprintf(&b, "Next: %s", d.NextAnalysis)
+	return b.String()
+}
+
+func findByCode(results []StrategyResult, code string) *StrategyResult {
+	for i := range results {
+		if results[i].Code == code {
+			return &results[i]
+		}
+	}
+	return nil
 }
 func minMaxStrategy(results []StrategyResult, fn func(StrategyResult) float64) (float64, float64) {
 	minV, maxV := math.Inf(1), math.Inf(-1)

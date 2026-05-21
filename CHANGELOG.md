@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-21
+
+### Added — Decision Report (closes `issues-breedos/02`)
+
+`DecisionSummary` response object now includes six new structured fields:
+
+- `tradeoffs` — up to three pairwise observations comparing top strategies on gain vs. risk, risk-adjusted vs. min-risk, and Pareto/aggressive-vs-diversity. Each entry has `a`, `b`, `theme`, and `note`.
+- `avoid_strategies` — strategies with combined risk ≥ 0.5 that are *not* Pareto-optimal. Each entry lists which risk-probability thresholds were breached.
+- `key_assumptions` — explicit list of modelling assumptions this run depends on (synthetic population, mock genomic-selection signal, additive trait architecture, heritability, selection percent, risk thresholds, CRISPR seed parameters when enabled).
+- `missing_data_warnings` — dynamic flags for replicates < 5, population < 50 or < 10, extreme heritability, mutation_rate = 0, short horizon, low baseline diversity.
+- `next_analysis` — heuristic suggestion for the next experiment (vary seed, tighten constraints, raise replicates, sweep selection intensity, etc.) depending on the shape of this run's outcome.
+- `summary_text` — single paragraph copy-pasteable export of the recommendation, max-gain / lowest-risk strategies, top trade-off, avoid list, first caveat, and next analysis.
+
+Frontend:
+
+- `renderDecisionPanel` now renders the new fields as collapsible `<details>` sections (Top trade-offs and Strategies to avoid open by default; Missing-data warnings shown with warning styling; Key assumptions collapsed by default).
+- "Recommended next analysis" callout block prominently displayed.
+- "Copy summary" button now prefers `decision.summary_text` from the server, falling back to the client-side `buildSummaryText` for older responses.
+- `style.css` adds `.decision-section`, `.decision-next`, `.decision-warnings` styles.
+
+Tests:
+
+- `TestDecisionReportPopulatesNewFields` — verifies all six new fields are populated for a basic run.
+- `TestDecisionReportFlagsHighRiskAggressiveOrIncludesItInTradeoff` — verifies aggressive strategy appears in AvoidStrategies or Tradeoffs in a small-N high-pressure scenario.
+- `TestDecisionReportSummaryReferencesRecommendedStrategy` — verifies `summary_text` references the recommended strategy by name and `next_analysis` matches one of the expected heuristic keywords.
+
+### Changed
+- `buildDecisionSummary` signature changed to take `(req SimRequest, results []StrategyResult, baseDiversity float64)` (was `(results []StrategyResult)`). Single internal call site updated.
+- Version strings bumped `v0.6.7` → `v0.7.0` in main.go run notes, landing footer, and demo kicker.
+
+### Non-goals (deferred)
+- Best-feasible-strategy field — deferred to v0.7.1 alongside the constraint engine in `issues-breedos/03`.
+- Tighter assumption/missing-data integration with a "scientific honesty" trust layer — deferred to v0.7.2 with `issues-breedos/06`.
+- PDF export and LLM-generated explanation — out of scope per the issue.
+
 ## [0.6.7] - 2026-05-21
 
 ### Fixed

@@ -152,3 +152,94 @@ func TestAdvancedDecisionEngineReturnsRanksAndRisks(t *testing.T) {
 		t.Fatalf("expected decision summary and Pareto codes: %+v", resp.Decision)
 	}
 }
+
+func TestDecisionReportPopulatesNewFields(t *testing.T) {
+	req := SimRequest{Seed: 555, PopulationSize: 24, Markers: 60, QTLCount: 10, Generations: 8, SelectionPercent: 20, Heritability: 0.5, MutationRate: 0.0001, StrategySet: "core", Replicates: 3, InbreedingLimit: 0.25, DiversityLossLimit: 0.30}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation failed: %v", err)
+	}
+	d := resp.Decision
+	if d.SummaryText == "" {
+		t.Fatalf("SummaryText must not be empty")
+	}
+	if d.NextAnalysis == "" {
+		t.Fatalf("NextAnalysis must not be empty")
+	}
+	if len(d.KeyAssumptions) == 0 {
+		t.Fatalf("KeyAssumptions must not be empty")
+	}
+	joined := strings.Join(d.KeyAssumptions, " ")
+	if !strings.Contains(joined, "Heritability") && !strings.Contains(joined, "h²") {
+		t.Fatalf("KeyAssumptions should mention heritability: %v", d.KeyAssumptions)
+	}
+	if d.Tradeoffs == nil {
+		t.Fatalf("Tradeoffs must be initialized (non-nil), even if empty")
+	}
+	if d.AvoidStrategies == nil {
+		t.Fatalf("AvoidStrategies must be initialized (non-nil), even if empty")
+	}
+	if d.MissingDataWarnings == nil {
+		t.Fatalf("MissingDataWarnings must be initialized (non-nil), even if empty")
+	}
+	if !strings.Contains(d.SummaryText, "Recommended") {
+		t.Fatalf("SummaryText should mention Recommended: %q", d.SummaryText)
+	}
+}
+
+func TestDecisionReportFlagsHighRiskAggressiveOrIncludesItInTradeoff(t *testing.T) {
+	req := SimRequest{Seed: 31337, PopulationSize: 12, Markers: 60, QTLCount: 10, Generations: 25, SelectionPercent: 15, Heritability: 0.5, MutationRate: 0.0001, StrategySet: "core", Replicates: 3, InbreedingLimit: 0.25, DiversityLossLimit: 0.30}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation failed: %v", err)
+	}
+	flagged := false
+	for _, a := range resp.Decision.AvoidStrategies {
+		if a.Code == "aggressive" {
+			flagged = true
+			break
+		}
+	}
+	for _, tr := range resp.Decision.Tradeoffs {
+		if tr.A == "aggressive" || tr.B == "aggressive" {
+			flagged = true
+			break
+		}
+	}
+	if !flagged {
+		t.Fatalf("expected aggressive to appear in AvoidStrategies or Tradeoffs (high-pressure small-N scenario); got decision=%+v", resp.Decision)
+	}
+}
+
+func TestDecisionReportSummaryReferencesRecommendedStrategy(t *testing.T) {
+	req := SimRequest{Seed: 777, PopulationSize: 50, Markers: 80, QTLCount: 12, Generations: 15, SelectionPercent: 20, Heritability: 0.5, MutationRate: 0.0001, StrategySet: "advanced", Replicates: 3, InbreedingLimit: 0.25, DiversityLossLimit: 0.30}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation failed: %v", err)
+	}
+	d := resp.Decision
+	bestName := ""
+	for _, s := range resp.Strategies {
+		if s.Code == d.BestRiskAdjustedCode {
+			bestName = s.Name
+			break
+		}
+	}
+	if bestName == "" {
+		t.Fatalf("best risk-adjusted strategy '%s' not found in results", d.BestRiskAdjustedCode)
+	}
+	if !strings.Contains(d.SummaryText, bestName) {
+		t.Fatalf("SummaryText must reference recommended strategy name '%s'; got: %s", bestName, d.SummaryText)
+	}
+	keywords := []string{"replicates", "Pareto", "seed", "intensity", "constraints", "robustness", "robust", "narrow"}
+	found := false
+	for _, kw := range keywords {
+		if strings.Contains(d.NextAnalysis, kw) {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("NextAnalysis should contain at least one of %v; got: %s", keywords, d.NextAnalysis)
+	}
+}

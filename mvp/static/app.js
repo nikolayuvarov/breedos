@@ -273,6 +273,11 @@ function renderDecisionPanel(data) {
   const lowest = findStrategy(data, d.lowest_risk_code);
   const lines = (d.interpretation || []).map(x => `<li>${escapeHtml(x)}</li>`).join('');
   const pareto = (d.pareto_codes || []).map(code => `<span class="pill">${escapeHtml(labels[code] || code)}</span>`).join(' ');
+  const tradeoffs = (d.tradeoffs || []).map(t => `<li><strong>${escapeHtml((labels[t.a] || t.a) + ' ↔ ' + (labels[t.b] || t.b))}</strong> <em>(${escapeHtml(t.theme)})</em><br><span>${escapeHtml(t.note)}</span></li>`).join('');
+  const avoid = (d.avoid_strategies || []).map(a => `<li><strong>${escapeHtml(labels[a.code] || a.name)}</strong> — ${escapeHtml(a.reason)}</li>`).join('');
+  const warnings = (d.missing_data_warnings || []).map(w => `<li>${escapeHtml(w)}</li>`).join('');
+  const assumptions = (d.key_assumptions || []).map(a => `<li>${escapeHtml(a)}</li>`).join('');
+  const next = d.next_analysis ? `<p class="decision-next"><strong>Recommended next analysis:</strong> ${escapeHtml(d.next_analysis)}</p>` : '';
   el.innerHTML = `
     <div class="decision-grid">
       <div class="decision-card"><span>Recommended</span><strong>${escapeHtml(best ? (labels[best.code] || best.name) : '-')}</strong><small>risk-adjusted score ${best ? fmt(best.final.risk_adjusted_score) : '-'}</small></div>
@@ -281,6 +286,11 @@ function renderDecisionPanel(data) {
     </div>
     <ul class="decision-list">${lines}</ul>
     <div class="pareto-list"><strong>Pareto candidates:</strong> ${pareto || '-'}</div>
+    ${next}
+    ${tradeoffs ? `<details class="decision-section" open><summary><strong>Top trade-offs</strong> (${(d.tradeoffs || []).length})</summary><ul class="decision-list">${tradeoffs}</ul></details>` : ''}
+    ${avoid ? `<details class="decision-section" open><summary><strong>Strategies to avoid</strong> (${(d.avoid_strategies || []).length})</summary><ul class="decision-list">${avoid}</ul></details>` : ''}
+    ${warnings ? `<details class="decision-section decision-warnings"><summary><strong>⚠ Missing-data warnings</strong> (${(d.missing_data_warnings || []).length})</summary><ul class="decision-list">${warnings}</ul></details>` : ''}
+    ${assumptions ? `<details class="decision-section"><summary><strong>Key assumptions</strong> (${(d.key_assumptions || []).length})</summary><ul class="decision-list">${assumptions}</ul></details>` : ''}
   `;
 }
 
@@ -569,7 +579,8 @@ function exportJSON() {
 
 async function copySummary() {
   if (!currentData) return;
-  const lines = buildSummaryText(currentData, previousData);
+  const serverText = currentData && currentData.decision && currentData.decision.summary_text;
+  const lines = serverText && serverText.length > 0 ? serverText : buildSummaryText(currentData, previousData);
   try {
     await navigator.clipboard.writeText(lines);
     setStatus('Run summary copied to clipboard.', 'ok');
