@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.6] - 2026-05-18
+
+### Removed
+- Customer-discovery page from public deployment (`mvp/static/customer_discovery.html`, the `/customer-discovery` route handler in `mvp/main.go`, and the corresponding `<a>` navigation links in `index.html` / `demo.html`). The page contained an internal customer-discovery framework (target segments and interview questions) intended for the founder's own workflow, not for public/investor visibility. Removing it focuses the landing on product narrative and the interactive demo only.
+
+### Changed
+- Updated MVP version strings (landing footer, demo kicker, run notes) from `v0.6.5` to `v0.6.6`.
+- README "Demo pages" list no longer lists `/customer-discovery`.
+
 ## [0.6.5] - 2026-05-18
 
 ### Added

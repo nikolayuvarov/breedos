@@ -58,7 +58,6 @@ Then open `http://127.0.0.1:8080/`.
 
 - `/` — landing page
 - `/demo` — interactive simulation UI
-- `/customer-discovery` — discovery framework view
 
 ## Run as a systemd service
 
