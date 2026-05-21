@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- `deploy_breedos.sh` now reads its defaults from a local `.env` file next to the script (gitignored). A new tracked `.env.example` documents the format. Override precedence: positional `$1` > `BREEDOS_DEPLOY_TARGET` env var (current shell or `.env`). When no target is configured and no `.env` exists, the script prints actionable instructions for creating one and exits non-zero. Help text is shown on `-h` / `--help` / `help`.
+
 ## [0.7.1] - 2026-05-21
 
 ### Added — Self-update module (`mvp/selfupdate.go`)

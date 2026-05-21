@@ -6,36 +6,58 @@
 # `--self-check`, swaps the running binary atomically, and exits so
 # systemd restarts the new version.
 #
+# Configuration:
+#   Defaults live in a local `.env` file next to this script (gitignored).
+#   See `.env.example` for the expected variables.
+#
 # Usage:
+#   ./deploy_breedos.sh                                   # use .env defaults
 #   ./deploy_breedos.sh user@host:/absolute/path/to/engine/
 #   BREEDOS_DEPLOY_TARGET=user@host:/abs/path/ ./deploy_breedos.sh
 #   BREEDOS_BINARY=other-binary ./deploy_breedos.sh user@host:/path/
-#
-# Notes:
-# - The target must end with `/` (a directory; the script appends
-#   `<BINARY_NAME>.UPDATE` for the remote filename).
-# - The local binary is built with mvp/build.sh (CGO_ENABLED=0, static,
-#   stripped). Local `--self-check` is run before scp so that broken
-#   builds never reach the remote host.
-# - First-time deploy to a host running v0.7.0 or earlier must still
-#   be done manually (the older binary does not understand .UPDATE).
-# - This script does not run anything on the remote host. The running
-#   service on the remote does the swap on its own.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BINARY_NAME="${BREEDOS_BINARY:-breedos}"
-TARGET="${1:-${BREEDOS_DEPLOY_TARGET:-}}"
+ENV_FILE="${SCRIPT_DIR}/.env"
+ENV_EXAMPLE="${SCRIPT_DIR}/.env.example"
 
-if [[ -z "$TARGET" ]]; then
-  cat >&2 <<EOF
+# Load defaults from .env if present. Variables set in the current
+# environment take precedence over .env (we only fill the gaps).
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+BINARY_NAME="${BREEDOS_BINARY:-breedos}"
+
+print_help() {
+  cat <<EOF
 deploy_breedos.sh — build + scp the breedos binary to a remote host as <binary>.UPDATE
 
 USAGE
-  $(basename "$0") user@host:/absolute/path/to/engine/
+  $(basename "$0")                                      # use defaults from .env
+  $(basename "$0") user@host:/absolute/path/to/engine/  # override target
   BREEDOS_DEPLOY_TARGET=user@host:/abs/path/ $(basename "$0")
   BREEDOS_BINARY=other-binary $(basename "$0") user@host:/path/
+
+CONFIGURATION
+  Defaults are read from a local \`.env\` file next to this script.
+  The .env file is gitignored — each operator keeps their own.
+
+  Expected variables (see .env.example for a template):
+    BREEDOS_DEPLOY_TARGET   user@host:/absolute/path/to/engine/   (required)
+    BREEDOS_BINARY          breedos                               (optional, default: breedos)
+
+  To create it from the template:
+    cp ${ENV_EXAMPLE} ${ENV_FILE}
+    \$EDITOR ${ENV_FILE}
+
+OVERRIDE PRECEDENCE (highest first)
+  1. Positional argument: \$1
+  2. Environment variable: BREEDOS_DEPLOY_TARGET (from current shell or .env)
 
 REQUIREMENTS
   - SSH access to the target host (key-based recommended; the script
@@ -45,9 +67,40 @@ REQUIREMENTS
     about the .UPDATE self-update contract). For older targets, deploy
     the binary manually with install.sh first.
 
-EXAMPLE
+EXAMPLES
+  $(basename "$0")
   $(basename "$0") backup@example.com:/home/backup/unred/hosts/www.breedos.org/engine/
 EOF
+}
+
+case "${1:-}" in
+  -h|--help|help)
+    print_help
+    exit 0
+    ;;
+esac
+
+TARGET="${1:-${BREEDOS_DEPLOY_TARGET:-}}"
+
+if [[ -z "$TARGET" ]]; then
+  echo "[deploy] ERROR: no deploy target configured." >&2
+  echo "" >&2
+  if [[ ! -f "$ENV_FILE" ]]; then
+    echo "[deploy] No .env file found at: ${ENV_FILE}" >&2
+    if [[ -f "$ENV_EXAMPLE" ]]; then
+      echo "[deploy] Create one from the template:" >&2
+      echo "[deploy]     cp ${ENV_EXAMPLE} ${ENV_FILE}" >&2
+      echo "[deploy]     \$EDITOR ${ENV_FILE}" >&2
+    fi
+    echo "" >&2
+  else
+    echo "[deploy] .env exists but does not set BREEDOS_DEPLOY_TARGET." >&2
+    echo "" >&2
+  fi
+  echo "[deploy] Or pass the target as a positional argument:" >&2
+  echo "[deploy]     $(basename "$0") user@host:/absolute/path/to/engine/" >&2
+  echo "" >&2
+  echo "[deploy] Run with --help for full documentation." >&2
   exit 2
 fi
 
