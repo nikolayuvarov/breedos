@@ -11,6 +11,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -193,11 +194,17 @@ var simJobStore = struct {
 
 func main() {
 	listen := flag.String("listen", ":8080", "HTTP listen address, for example :8080 or 127.0.0.1:8080")
+	selfCheck := flag.Bool("self-check", false, "print OK and exit (used by the self-update contract)")
 	flag.Parse()
+	if *selfCheck {
+		fmt.Println("OK")
+		os.Exit(0)
+	}
 	staticFS, err := fs.Sub(embeddedStatic, "static")
 	if err != nil {
 		log.Fatalf("static fs error: %v", err)
 	}
+	startSelfUpdateWatcher(selfUpdateInterval)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/simulate", simulateHandler)
 	mux.HandleFunc("/api/simulate/start", startSimulationJobHandler)
@@ -401,7 +408,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.0 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, marks Pareto-optimal trade-offs, and emits a structured decision report (tradeoffs, avoid list, assumptions, missing-data warnings, next-analysis suggestion, summary text).",
+		"BreedOS v0.7.1 now runs Monte Carlo replicates, computes risk probabilities, ranks strategies, marks Pareto-optimal trade-offs, emits a structured decision report (tradeoffs, avoid list, assumptions, missing-data warnings, next-analysis suggestion, summary text), and watches for a sibling <binary>.UPDATE file for self-update via the --self-check contract.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -431,7 +438,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.0 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.1 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

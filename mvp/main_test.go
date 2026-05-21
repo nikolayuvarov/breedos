@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -241,5 +243,78 @@ func TestDecisionReportSummaryReferencesRecommendedStrategy(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("NextAnalysis should contain at least one of %v; got: %s", keywords, d.NextAnalysis)
+	}
+}
+
+func TestPerformSwapRenamesBinaryAndCreatesBackup(t *testing.T) {
+	dir := t.TempDir()
+	currentPath := filepath.Join(dir, "breedos")
+	updatePath := currentPath + ".UPDATE"
+
+	if err := os.WriteFile(currentPath, []byte("OLD"), 0o755); err != nil {
+		t.Fatalf("write current: %v", err)
+	}
+	if err := os.WriteFile(updatePath, []byte("NEW"), 0o755); err != nil {
+		t.Fatalf("write update: %v", err)
+	}
+
+	if err := performSwap(currentPath, updatePath); err != nil {
+		t.Fatalf("performSwap returned error: %v", err)
+	}
+
+	data, err := os.ReadFile(currentPath)
+	if err != nil {
+		t.Fatalf("read current after swap: %v", err)
+	}
+	if string(data) != "NEW" {
+		t.Fatalf("current path should now hold update content; got %q", string(data))
+	}
+
+	if _, err := os.Stat(updatePath); !os.IsNotExist(err) {
+		t.Fatalf("update path should be gone after swap; stat err: %v", err)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	var backupName string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "breedos.bak.") {
+			backupName = e.Name()
+			break
+		}
+	}
+	if backupName == "" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("no backup file matching 'breedos.bak.*' found; dir contains: %v", names)
+	}
+	backupData, err := os.ReadFile(filepath.Join(dir, backupName))
+	if err != nil {
+		t.Fatalf("read backup: %v", err)
+	}
+	if string(backupData) != "OLD" {
+		t.Fatalf("backup should contain old binary content; got %q", string(backupData))
+	}
+}
+
+func TestEnsureExecutableSetsExecBit(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "candidate")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := ensureExecutable(path); err != nil {
+		t.Fatalf("ensureExecutable: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("owner exec bit should be set after ensureExecutable; got mode %o", info.Mode().Perm())
 	}
 }
