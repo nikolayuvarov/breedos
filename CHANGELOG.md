@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5] - 2026-05-22
+
+### Changed — External real-data CSVs (not embedded in binary)
+
+Large founder-data CSVs (Arabidopsis 1001 and any future maize / wheat panels) are no longer embedded into the binary via `//go:embed`. They live as separate files on the server alongside the binary in `<bindir>/data/<name>.csv`. The binary stays small (~6.5 MB); the data deploys independently.
+
+`mvp/dataset.go` lookup order for a `dataset=<name>` request:
+
+1. `<bindir>/data/<name>.csv` (external — operator-deployed).
+2. Embedded `data/<name>.csv` (only if explicitly added to the `//go:embed` directive — currently only the placeholder is included).
+3. Embedded `data/example_founders.csv` (placeholder fallback so the dropdown still works on fresh installs).
+
+Parsed datasets are cached in a package-level map (`datasetCache`); repeat requests within the same binary instance reuse the parsed matrix instead of re-reading and re-parsing the file. A 100 MB CSV would otherwise cost ~1 s of parse time per simulation; with the cache, only the first request pays.
+
+The `//go:embed` directive is narrowed from `data/*.csv` to `data/example_founders.csv` so that adding new CSVs to `mvp/data/` locally does NOT bloat the compiled binary.
+
+### Changed — `.gitignore`
+
+`mvp/data/*.csv` is now gitignored, with `mvp/data/example_founders.csv` whitelisted. Large CSVs produced by `tools/data/fetch_*.py` stay local; only the placeholder ships in git.
+
+### Changed — `deploy_breedos.sh`
+
+Before uploading the binary, the deploy script now uploads external data files conditionally:
+
+- Iterates `mvp/data/*.csv` and selects files that are gitignored (i.e., external).
+- Creates `<bindir>/data/` on the remote via SSH.
+- For each external file, compares local size with remote size (`ssh stat -c %s`).
+- Uploads via `scp` only when remote is missing or sizes differ.
+- Skips upload when remote and local sizes match (byte-exact).
+
+This keeps repeat deploys fast: the 100 MB Arabidopsis CSV is uploaded once and skipped on every subsequent deploy unless it changes.
+
+### Added — Test for external-precedence
+
+`TestExternalDatasetTakesPrecedenceOverEmbedded` writes a CSV into `<testbin-dir>/data/arabidopsis1001.csv` and verifies that `loadDataset` reads the external file (not the embedded placeholder), sets `ds.external = true`, and clears the placeholder flag.
+
+### Changed — Notes language
+
+`buildNotes` now distinguishes three cases when reporting the founder-population source:
+
+- Placeholder fixture (warning).
+- External real-data file (`external = true`).
+- Embedded real-data file (only possible if a CSV is explicitly bundled — rare).
+
+### Changed
+- Version strings bumped `v0.7.4` → `v0.7.5` in `main.go` run notes, `index.html` footer, and `demo.html` kicker.
+- Run-notes top description rewritten to mention the external-data deploy semantics.
+
+### Migration notes
+- Existing deployments with v0.7.4 had the (small) `arabidopsis1001.csv` embedded if the operator ran the fetcher before building. After upgrading to v0.7.5: on first run, the loader will NOT find the embedded data (new embed pattern), will look for `<bindir>/data/arabidopsis1001.csv`, and if missing, fall back to the placeholder. The deploy script handles this transition: it uploads the local CSV (gitignored) to `<bindir>/data/` before swapping the binary.
+- Repos that imported `mvp/data/<some-csv>` into git inadvertently: the file will become gitignored. Remove from index with `git rm --cached`.
+
 ## [0.7.4] - 2026-05-22
 
 ### Added — Real-data founder population loader (closes `issues-breedos/04`)

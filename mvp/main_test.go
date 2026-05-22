@@ -529,3 +529,44 @@ func TestDatasetRoutedThroughSimulation(t *testing.T) {
 		t.Fatalf("expected placeholder warning in notes; got: %v", resp.Notes)
 	}
 }
+
+// v0.7.5 — external dataset takes precedence over embedded placeholder.
+func TestExternalDatasetTakesPrecedenceOverEmbedded(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	dataDir := filepath.Join(filepath.Dir(exe), "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	target := filepath.Join(dataDir, "arabidopsis1001.csv")
+	content := []byte("# external test fixture (no placeholder marker)\naccession_id,m1,m2\nEXT_A,0,1\nEXT_B,1,2\nEXT_C,2,0\n")
+	if err := os.WriteFile(target, content, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Remove(target)
+		// data/ may also contain other files written by earlier tests; only
+		// remove if empty to avoid clobbering parallel state.
+		_ = os.Remove(dataDir)
+		resetDatasetCache()
+	})
+	resetDatasetCache()
+	ds, err := loadDataset("arabidopsis1001")
+	if err != nil {
+		t.Fatalf("loadDataset: %v", err)
+	}
+	if !ds.external {
+		t.Fatalf("expected external=true; got source=%q external=%v", ds.sourceFile, ds.external)
+	}
+	if ds.isPlaceholder {
+		t.Fatalf("external real-data file must not be flagged as placeholder")
+	}
+	if ds.markerCount != 2 || len(ds.individuals) != 3 {
+		t.Fatalf("expected 3 individuals × 2 markers; got %d × %d", len(ds.individuals), ds.markerCount)
+	}
+	if ds.accessionIDs[0] != "EXT_A" {
+		t.Fatalf("expected first accession EXT_A; got %q", ds.accessionIDs[0])
+	}
+}

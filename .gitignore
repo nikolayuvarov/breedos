@@ -19,3 +19,9 @@ breedos-*
 # Local config
 *.local
 .env
+
+# v0.7.5: large external dataset CSVs are not committed — they are fetched
+# locally via tools/data/fetch_*.py and uploaded to the server alongside the
+# binary by deploy_breedos.sh. Only the small placeholder fixture stays in git.
+mvp/data/*.csv
+!mvp/data/example_founders.csv

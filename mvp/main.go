@@ -461,16 +461,19 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.4 adds an optional real-data founder population (Arabidopsis 1001 Genomes); subsequent simulation (selection, recombination, mutation) remains synthetic. v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
+		"BreedOS v0.7.5 separates large founder-data CSVs from the binary: they live as external files alongside the binary and are uploaded conditionally by deploy_breedos.sh. v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
 	}
 	if datasetMeta != nil {
-		if datasetMeta.isPlaceholder {
-			notes = append(notes, fmt.Sprintf("⚠ Dataset '%s' is the embedded PLACEHOLDER fixture (%s) — a synthetic random matrix in the BreedOS founder-CSV format. Run tools/data/fetch_arabidopsis_1001.py and rebuild the binary to replace it with real Arabidopsis 1001 Genomes data.", req.Dataset, datasetMeta.sourceFile))
-		} else {
-			notes = append(notes, fmt.Sprintf("Founder population loaded from real-data file %s (%d accessions × %d markers). Selection, recombination, and mutation remain synthetic for this run.", datasetMeta.sourceFile, len(datasetMeta.individuals), datasetMeta.markerCount))
+		switch {
+		case datasetMeta.isPlaceholder:
+			notes = append(notes, fmt.Sprintf("⚠ Dataset '%s' is the embedded PLACEHOLDER fixture (%s) — a synthetic random matrix in the BreedOS founder-CSV format. Run tools/data/fetch_arabidopsis_1001.py to fetch real data; deploy_breedos.sh will upload it to the server alongside the binary.", req.Dataset, datasetMeta.sourceFile))
+		case datasetMeta.external:
+			notes = append(notes, fmt.Sprintf("Founder population loaded from external file %s (%d accessions × %d markers). Selection, recombination, and mutation remain synthetic for this run.", datasetMeta.sourceFile, len(datasetMeta.individuals), datasetMeta.markerCount))
+		default:
+			notes = append(notes, fmt.Sprintf("Founder population loaded from embedded dataset %s (%d accessions × %d markers). Selection, recombination, and mutation remain synthetic for this run.", datasetMeta.sourceFile, len(datasetMeta.individuals), datasetMeta.markerCount))
 		}
 	}
 	if req.StrategySet == "advanced" {
@@ -498,7 +501,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.4 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.5 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

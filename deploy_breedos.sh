@@ -131,6 +131,46 @@ if [[ "$(echo "$result" | tr -d '[:space:]')" != "OK" ]]; then
 fi
 echo "[deploy] local --self-check: OK"
 
+REMOTE_HOST="${TARGET%%:*}"
+REMOTE_DIR="${TARGET#*:}"
+REMOTE_DATA_DIR="${REMOTE_DIR}data/"
+
+# v0.7.5: external dataset CSVs live alongside the binary on the server.
+# Any gitignored CSV in mvp/data/ is treated as external (large; not embedded).
+# Tracked CSVs (the placeholder fixture) stay embedded in the binary and are
+# not uploaded separately.
+echo "[deploy] checking external data files..."
+EXTERNAL_DATA_FILES=()
+shopt -s nullglob
+for f in mvp/data/*.csv; do
+  if git check-ignore -q -- "$f" 2>/dev/null; then
+    EXTERNAL_DATA_FILES+=("$f")
+  fi
+done
+shopt -u nullglob
+
+if [[ "${#EXTERNAL_DATA_FILES[@]}" -gt 0 ]]; then
+  echo "[deploy] mkdir -p ${REMOTE_DATA_DIR} (on remote)"
+  if ! ssh "$REMOTE_HOST" "mkdir -p '${REMOTE_DATA_DIR}'"; then
+    echo "[deploy] ERROR: could not mkdir ${REMOTE_DATA_DIR} on remote" >&2
+    exit 4
+  fi
+  for f in "${EXTERNAL_DATA_FILES[@]}"; do
+    base="$(basename "$f")"
+    local_size="$(stat -c %s "$f")"
+    remote_size="$(ssh "$REMOTE_HOST" "stat -c %s '${REMOTE_DATA_DIR}${base}' 2>/dev/null" || true)"
+    remote_size="${remote_size//[^0-9]/}"
+    if [[ -n "$remote_size" && "$remote_size" == "$local_size" ]]; then
+      echo "[deploy]   ${base}: ${local_size} bytes already on remote — skip"
+    else
+      echo "[deploy]   ${base}: local=${local_size} remote=${remote_size:-missing} — uploading"
+      scp "$f" "${TARGET}data/${base}"
+    fi
+  done
+else
+  echo "[deploy] no external data files to consider"
+fi
+
 REMOTE_FILE="${TARGET}${BINARY_NAME}.UPDATE"
 echo "[deploy] scp ${LOCAL_BUILD} -> ${REMOTE_FILE}"
 scp "$LOCAL_BUILD" "$REMOTE_FILE"

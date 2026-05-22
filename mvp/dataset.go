@@ -5,14 +5,18 @@ import (
 	"embed"
 	"fmt"
 	"math/rand"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // v0.7.4 dataset loader (Issue 04 — public-data proof).
+// v0.7.5 — external file preferred over embedded; embedded fallback only ships
+// the placeholder so the binary stays small.
 //
-// The simulator can use real founder genotypes instead of a generated synthetic
-// population. The expected on-disk format is a simple CSV:
+// On-disk founder-CSV format:
 //
 //   # comments and metadata may appear as lines starting with '#'
 //   # placeholder: true               <-- if present, marks the file as a non-real placeholder
@@ -23,40 +27,113 @@ import (
 // Values are 0/1/2 (allele dose per locus, diploid biallelic).
 // Rows are individual accessions; columns after the ID are SNP markers.
 //
-// Files are embedded into the binary via //go:embed. The first-class
-// dataset name `arabidopsis1001` resolves to `data/arabidopsis1001.csv`
-// when present; otherwise to the shipped placeholder
-// `data/example_founders.csv` (clearly marked as a placeholder in metadata).
+// Lookup order for a request like dataset=arabidopsis1001:
+//   1. <bindir>/data/arabidopsis1001.csv          (external — operator-deployed)
+//   2. embedded data/arabidopsis1001.csv           (only if explicitly included via //go:embed)
+//   3. embedded data/example_founders.csv          (placeholder fallback so the dropdown still works)
+//
+// Only the placeholder is included in the //go:embed directive so the binary
+// stays small. Large real-data CSVs (Arabidopsis 1001, future maize panels)
+// are gitignored in the breedos repo, fetched locally with tools/data/fetch_*.py,
+// and uploaded to the server by deploy_breedos.sh as separate files alongside
+// the binary.
 
-//go:embed data/*.csv
+//go:embed data/example_founders.csv
 var embeddedDatasets embed.FS
 
 type loadedDataset struct {
-	individuals     []organism
-	markerCount     int
-	accessionIDs    []string
-	isPlaceholder   bool
-	sourceFile      string
-	sourceNotes     []string
+	individuals   []organism
+	markerCount   int
+	accessionIDs  []string
+	isPlaceholder bool
+	sourceFile    string
+	sourceNotes   []string
+	external      bool
 }
 
+var datasetCache = struct {
+	sync.Mutex
+	items map[string]*loadedDataset
+}{items: make(map[string]*loadedDataset)}
+
 func loadDataset(name string) (*loadedDataset, error) {
-	candidate := "data/" + name + ".csv"
-	data, err := embeddedDatasets.ReadFile(candidate)
-	if err != nil {
-		// Fall back to the placeholder so the UI dropdown still works during early v0.7.4.
-		data, err = embeddedDatasets.ReadFile("data/example_founders.csv")
-		if err != nil {
-			return nil, fmt.Errorf("no embedded dataset %q and no fallback example_founders.csv: %w", name, err)
-		}
-		candidate = "data/example_founders.csv"
+	datasetCache.Lock()
+	defer datasetCache.Unlock()
+	if ds, ok := datasetCache.items[name]; ok {
+		return ds, nil
 	}
-	return parseDatasetCSV(data, candidate)
+	ds, err := loadDatasetUncached(name)
+	if err != nil {
+		return nil, err
+	}
+	datasetCache.items[name] = ds
+	return ds, nil
+}
+
+func loadDatasetUncached(name string) (*loadedDataset, error) {
+	// 1) External file next to the running binary, in ./data/<name>.csv.
+	//    This is the production layout: deploy_breedos.sh uploads large CSVs
+	//    here instead of embedding them in the binary.
+	if path, ok := externalDatasetPath(name); ok {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			ds, err := parseDatasetCSV(data, path)
+			if err == nil {
+				ds.external = true
+				return ds, nil
+			}
+			return nil, fmt.Errorf("external dataset %q parse failed: %w", path, err)
+		}
+	}
+
+	// 2) Embedded dataset matching the requested name (rare — only when a
+	//    small dataset is explicitly added to the //go:embed directive).
+	candidate := "data/" + name + ".csv"
+	if data, err := embeddedDatasets.ReadFile(candidate); err == nil {
+		return parseDatasetCSV(data, candidate)
+	}
+
+	// 3) Fall back to the embedded placeholder so the dropdown still works on
+	//    a fresh install without external data.
+	data, err := embeddedDatasets.ReadFile("data/example_founders.csv")
+	if err != nil {
+		return nil, fmt.Errorf("no external file for %q and no embedded placeholder available: %w", name, err)
+	}
+	return parseDatasetCSV(data, "data/example_founders.csv")
+}
+
+// externalDatasetPath returns the path BreedOS looks at for an external
+// dataset, alongside the running binary in ./data/<name>.csv. Returns
+// (path, true) if the file exists, (path, false) otherwise.
+func externalDatasetPath(name string) (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", false
+	}
+	resolved, err := filepath.EvalSymlinks(exe)
+	if err == nil {
+		exe = resolved
+	}
+	path := filepath.Join(filepath.Dir(exe), "data", name+".csv")
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return path, false
+	}
+	return path, true
+}
+
+// resetDatasetCache is exposed for tests; it should not be called from
+// production code paths since dataset files are not expected to change while
+// the binary is running.
+func resetDatasetCache() {
+	datasetCache.Lock()
+	defer datasetCache.Unlock()
+	datasetCache.items = make(map[string]*loadedDataset)
 }
 
 func parseDatasetCSV(raw []byte, sourceFile string) (*loadedDataset, error) {
 	scanner := bufio.NewScanner(strings.NewReader(string(raw)))
-	scanner.Buffer(make([]byte, 0, 1024*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 0, 1024*1024), 64*1024*1024)
 	out := &loadedDataset{sourceFile: sourceFile}
 	headerSeen := false
 	var headerCols int
@@ -113,9 +190,10 @@ func parseDatasetCSV(raw []byte, sourceFile string) (*loadedDataset, error) {
 	return out, nil
 }
 
-// subsampleDataset samples up to n accessions without replacement and (optionally)
-// up to m markers (taking the first m columns deterministically — markers are
-// typically pre-ordered by quality/MAF in the fetch script).
+// subsampleDataset samples up to n accessions without replacement and up to m
+// markers (taking the first m columns deterministically — markers are
+// typically pre-ordered by the fetch script). The returned dataset is a deep
+// copy; the input is not mutated and can stay in the package-level cache.
 func subsampleDataset(ds *loadedDataset, n, m int, rng *rand.Rand) *loadedDataset {
 	if ds == nil {
 		return nil
@@ -132,6 +210,7 @@ func subsampleDataset(ds *loadedDataset, n, m int, rng *rand.Rand) *loadedDatase
 		isPlaceholder: ds.isPlaceholder,
 		sourceFile:    ds.sourceFile,
 		sourceNotes:   ds.sourceNotes,
+		external:      ds.external,
 		individuals:   make([]organism, n),
 		accessionIDs:  make([]string, n),
 	}
