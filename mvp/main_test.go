@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -425,4 +427,105 @@ func strategyCodes(s []StrategyResult) []string {
 		out = append(out, r.Code)
 	}
 	return out
+}
+
+// v0.7.4 dataset loader tests (Issue 04).
+
+func TestParseDatasetCSVRoundTrip(t *testing.T) {
+	raw := []byte(`# tiny fixture
+# placeholder: true
+accession_id,m1,m2,m3
+A001,0,1,2
+A002,2,2,0
+A003,1,0,1
+`)
+	ds, err := parseDatasetCSV(raw, "tiny.csv")
+	if err != nil {
+		t.Fatalf("parseDatasetCSV: %v", err)
+	}
+	if !ds.isPlaceholder {
+		t.Fatalf("expected placeholder=true from `# placeholder: true` line")
+	}
+	if ds.markerCount != 3 {
+		t.Fatalf("expected 3 markers, got %d", ds.markerCount)
+	}
+	if len(ds.individuals) != 3 {
+		t.Fatalf("expected 3 individuals, got %d", len(ds.individuals))
+	}
+	want := []uint8{2, 2, 0}
+	if string(ds.individuals[1].geno) != string(want) {
+		t.Fatalf("row A002 geno mismatch: got %v want %v", ds.individuals[1].geno, want)
+	}
+	if ds.accessionIDs[0] != "A001" || ds.accessionIDs[2] != "A003" {
+		t.Fatalf("accession IDs mismatch: %v", ds.accessionIDs)
+	}
+}
+
+func TestParseDatasetCSVRejectsOutOfRange(t *testing.T) {
+	raw := []byte("accession_id,m1\nX,3\n")
+	if _, err := parseDatasetCSV(raw, "bad.csv"); err == nil {
+		t.Fatalf("expected error on value 3 outside 0..2")
+	}
+}
+
+func TestLoadDatasetFallsBackToPlaceholder(t *testing.T) {
+	ds, err := loadDataset("definitely-not-a-real-dataset-name")
+	if err != nil {
+		t.Fatalf("loadDataset unexpected error: %v", err)
+	}
+	if !ds.isPlaceholder {
+		t.Fatalf("expected fallback to placeholder example_founders.csv")
+	}
+	if len(ds.individuals) == 0 || ds.markerCount == 0 {
+		t.Fatalf("expected non-empty placeholder dataset; got N=%d M=%d", len(ds.individuals), ds.markerCount)
+	}
+}
+
+func TestSubsampleDatasetSize(t *testing.T) {
+	raw := []byte("accession_id,m1,m2,m3,m4,m5\n")
+	for i := 0; i < 20; i++ {
+		raw = append(raw, []byte(fmt.Sprintf("R%02d,0,1,2,1,0\n", i))...)
+	}
+	ds, err := parseDatasetCSV(raw, "fixture.csv")
+	if err != nil {
+		t.Fatalf("parseDatasetCSV: %v", err)
+	}
+	rng := rand.New(rand.NewSource(1))
+	sub := subsampleDataset(ds, 5, 3, rng)
+	if len(sub.individuals) != 5 || sub.markerCount != 3 {
+		t.Fatalf("expected N=5 M=3 after subsample; got N=%d M=%d", len(sub.individuals), sub.markerCount)
+	}
+	for _, ind := range sub.individuals {
+		if len(ind.geno) != 3 {
+			t.Fatalf("subsampled individual should have 3 markers; got %d", len(ind.geno))
+		}
+	}
+}
+
+func TestDatasetRoutedThroughSimulation(t *testing.T) {
+	req := SimRequest{
+		Seed: 7, PopulationSize: 30, Markers: 50, QTLCount: 10,
+		Generations: 4, SelectionPercent: 25, Heritability: 0.5,
+		MutationRate: 0.0001, StrategySet: "core", Replicates: 1,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.30,
+		Dataset: "arabidopsis1001", // will fall back to placeholder fixture
+	}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation with dataset: %v", err)
+	}
+	if len(resp.Strategies) == 0 {
+		t.Fatalf("expected strategies in response")
+	}
+	// Notes should reference the placeholder warning.
+	found := false
+	for _, n := range resp.Notes {
+		if strings.Contains(strings.ToLower(n), "placeholder") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected placeholder warning in notes; got: %v", resp.Notes)
+	}
 }

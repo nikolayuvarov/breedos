@@ -21,7 +21,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.3 — constraint engine + honesty layer</div>
+      <div class="kicker">MVP v0.7.4 — Arabidopsis 1001 loader + constraint engine + honesty layer</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -43,6 +43,17 @@
         </div>
 
         <div class="form-grid">
+          <div class="field">
+            <label>
+              <span>Founder population <span class="tip" tabindex="0" data-tip="`Synthetic` generates a random diploid biallelic population from uniform allele frequencies. `Arabidopsis 1001` loads real founder genotypes from the embedded subset of the 1001 Genomes Project. v0.7.4 ships a PLACEHOLDER fixture by default — run tools/data/fetch_arabidopsis_1001.py and rebuild to use real data.">?</span></span>
+              <span>data source</span>
+            </label>
+            <select id="dataset">
+              <option value="synthetic" selected>Synthetic (generated)</option>
+              <option value="arabidopsis1001">Arabidopsis 1001 (subset)</option>
+            </select>
+          </div>
+
           <div class="field">
             <label>
               <span>Random seed <span class="tip" tabindex="0" data-tip="Controls stochastic repeatability. Same seed + same parameters should produce the same run; change it to see another random trajectory.">?</span></span>

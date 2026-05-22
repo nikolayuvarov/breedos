@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4] - 2026-05-22
+
+### Added — Real-data founder population loader (closes `issues-breedos/04`)
+
+The simulator can now load real founder genotypes from an embedded CSV instead of generating a synthetic population. The on-ramp for the Arabidopsis 1001 Genomes Project is the first wired-up dataset; the same loader works for any matrix in the BreedOS founder-CSV format.
+
+`SimRequest` adds:
+
+- `dataset` (string) — `"synthetic"` (default, current behaviour) or `"arabidopsis1001"` (loads from embedded CSV).
+
+New module `mvp/dataset.go`:
+
+- `loadDataset(name)` reads the matching `data/<name>.csv` via `//go:embed`, falling back to `data/example_founders.csv` so the dropdown still works even before the user runs the fetch script. Comment lines starting with `#` are ignored except for `# placeholder: true`, which marks the file as the non-real placeholder.
+- `parseDatasetCSV` performs strict 0/1/2 validation; out-of-range values fail loudly.
+- `subsampleDataset(ds, n, m, rng)` samples up to `n` accessions and the first `m` markers; called from `runSimulationWithProgress` so the existing `population_size` / `markers` knobs continue to scope the run.
+
+When a dataset is selected, the simulator:
+
+- Replaces the generated founder population with the loaded one.
+- Overrides `req.PopulationSize` and `req.Markers` to match the loaded matrix.
+- Adds a run note that either announces the real data source ("Founder population loaded from real-data file ...") or warns clearly that the placeholder is in use ("⚠ Dataset 'arabidopsis1001' is the embedded PLACEHOLDER fixture — run tools/data/fetch_arabidopsis_1001.py and rebuild ...").
+- Updates the honesty banner, `key_assumptions`, and `limitations` to acknowledge real founders while making clear that selection / recombination / mutation in subsequent generations remain synthetic.
+
+### Added — Python fetch script (`tools/data/fetch_arabidopsis_1001.py`)
+
+A standalone Python 3 script (no external dependencies) that:
+
+- Streams the 1001 Genomes v3.1 VCF (gzip-aware, HTTP or local file).
+- Filters to biallelic SNPs with `--maf` ≥ 0.05 and `--max-missing` ≤ 0.10.
+- Samples `--n` accessions and `--m` markers deterministically (`--seed`).
+- Imputes any remaining missing genotypes at sampled sites with mean-dose rounding.
+- Writes a BreedOS founder-CSV to `breedos/mvp/data/arabidopsis1001.csv`.
+
+The Go loader picks up the new CSV on the next binary rebuild (`./mvp/build.sh ...`). See `tools/data/README.md` for the workflow.
+
+### Added — Placeholder fixture
+
+`breedos/mvp/data/example_founders.csv` ships a 60 × 200 synthetic-but-real-format matrix so that the dataset dropdown is exercised by tests and the live demo without requiring the user to run the fetch script first. The file is marked `# placeholder: true` and the simulator emits a prominent warning note when it's in use.
+
+### Added — Dataset dropdown in demo
+
+`demo.html` exposes a "Founder population" dropdown at the top of the simulation-inputs form with two options: `Synthetic (generated)` (default) and `Arabidopsis 1001 (subset)`. The selection is passed in the `dataset` request field; `requestSignature` and `changedParams` include it so cache invalidation behaves correctly when the operator switches data sources.
+
+### Added — Tests
+
+`mvp/main_test.go` adds four tests:
+
+- `TestParseDatasetCSVRoundTrip` — parses a tiny 3 × 3 CSV with comments and the `placeholder: true` marker; verifies parsed values, accession IDs, and the placeholder flag.
+- `TestParseDatasetCSVRejectsOutOfRange` — guarantees that a value outside `0..2` causes a parse error.
+- `TestLoadDatasetFallsBackToPlaceholder` — verifies the loader fallback path when the requested dataset file doesn't exist.
+- `TestDatasetRoutedThroughSimulation` — runs an end-to-end simulation with `dataset: "arabidopsis1001"` (which falls back to the placeholder) and confirms the placeholder warning appears in the response notes.
+
+### Changed
+- Version strings bumped `v0.7.3` → `v0.7.4` in `main.go` run notes, `index.html` footer, and `demo.html` kicker.
+- `buildNotes` signature now accepts an optional `*loadedDataset` so the dataset-related warning/announcement can be emitted alongside the existing notes.
+
+### Not in this release
+- The simulator does NOT ship real Arabidopsis 1001 Genomes data — that data is large and the user fetches it locally. The binary ships with the placeholder fixture so all code paths and the UI dropdown are exercisable on first install. To use real data: run `tools/data/fetch_arabidopsis_1001.py`, then rebuild.
+- No streaming visualisation — that lands separately in v0.7.5.
+- No new selection strategies; constraint engine (v0.7.3), honesty layer (v0.7.2), and self-update mechanism (v0.7.1) unchanged.
+
 ## [0.7.3] - 2026-05-21
 
 ### Added — Constraint engine and feasible-strategy selection (closes `issues-breedos/03`)

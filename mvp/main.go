@@ -47,6 +47,9 @@ type SimRequest struct {
 	MinGeneticGain      float64 `json:"min_genetic_gain"`
 	MinEffectiveParents int     `json:"min_effective_parents"`
 	MaxCombinedRisk     float64 `json:"max_combined_risk"`
+	// v0.7.4 dataset loader (Issue 04). "" or "synthetic" = generated population;
+	// "arabidopsis1001" = load real Arabidopsis 1001 Genomes founders from embedded CSV.
+	Dataset string `json:"dataset"`
 }
 
 type SimResponse struct {
@@ -405,8 +408,26 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 		return SimResponse{}, err
 	}
 	rng := rand.New(rand.NewSource(req.Seed))
+
+	var initial []organism
+	var datasetMeta *loadedDataset
+	if datasetSelected(req.Dataset) {
+		ds, err := loadDataset(req.Dataset)
+		if err != nil {
+			return SimResponse{}, fmt.Errorf("load dataset %q: %w", req.Dataset, err)
+		}
+		ds = subsampleDataset(ds, req.PopulationSize, req.Markers, rng)
+		req.PopulationSize = len(ds.individuals)
+		req.Markers = ds.markerCount
+		datasetMeta = ds
+		initial = clonePopulation(ds.individuals)
+		reportProgress(progress, 3, fmt.Sprintf("loaded dataset %s: N=%d, markers=%d%s",
+			req.Dataset, req.PopulationSize, req.Markers, placeholderTag(ds)))
+	} else {
+		initial = makeInitialPopulation(req.PopulationSize, req.Markers, rng)
+	}
+
 	effects := makeEffects(req.Markers, req.QTLCount, rng)
-	initial := makeInitialPopulation(req.PopulationSize, req.Markers, rng)
 	baseFreq := alleleFreq(initial, req.Markers)
 	baseDiversity := diversityFromFreq(baseFreq)
 	baseMean := meanGeneticValue(initial, effects)
@@ -418,17 +439,39 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 	annotateFeasibility(req, results, baseDiversity)
 	decision := buildDecisionSummary(req, results, baseDiversity)
 	reportProgress(progress, 98, "building response")
-	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity)}, nil
+	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity, datasetMeta)}, nil
 }
 
-func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []string {
+func datasetSelected(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "", "synthetic":
+		return false
+	}
+	return true
+}
+
+func placeholderTag(ds *loadedDataset) string {
+	if ds != nil && ds.isPlaceholder {
+		return " [PLACEHOLDER fixture]"
+	}
+	return ""
+}
+
+func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datasetMeta *loadedDataset) []string {
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.3 adds a constraint engine (max inbreeding, max diversity loss, max rare-loci lost, min gain, min effective parents, max combined risk) that flags each strategy feasible/infeasible and surfaces a 'best feasible' selection in the decision report. v0.7.2 honesty layer (banner, limitations, what-could-be-wrong) and v0.7.1 self-update watcher (--self-check + .UPDATE file) are inherited.",
+		"BreedOS v0.7.4 adds an optional real-data founder population (Arabidopsis 1001 Genomes); subsequent simulation (selection, recombination, mutation) remains synthetic. v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
+	}
+	if datasetMeta != nil {
+		if datasetMeta.isPlaceholder {
+			notes = append(notes, fmt.Sprintf("⚠ Dataset '%s' is the embedded PLACEHOLDER fixture (%s) — a synthetic random matrix in the BreedOS founder-CSV format. Run tools/data/fetch_arabidopsis_1001.py and rebuild the binary to replace it with real Arabidopsis 1001 Genomes data.", req.Dataset, datasetMeta.sourceFile))
+		} else {
+			notes = append(notes, fmt.Sprintf("Founder population loaded from real-data file %s (%d accessions × %d markers). Selection, recombination, and mutation remain synthetic for this run.", datasetMeta.sourceFile, len(datasetMeta.individuals), datasetMeta.markerCount))
+		}
 	}
 	if req.StrategySet == "advanced" {
 		notes = append(notes, "Advanced strategy set enabled: includes neutral/random baselines, phenotype/genomic selection mockups, OCS-like diversity constraint, cross planning, and edit-aware introgression.")
@@ -455,7 +498,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.3 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.4 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -922,8 +965,12 @@ func buildAvoidList(results []StrategyResult) []AvoidEntry {
 }
 
 func buildKeyAssumptions(req SimRequest) []string {
+	founderStmt := "Synthetic population; no real genotype or phenotype data ingested."
+	if datasetSelected(req.Dataset) {
+		founderStmt = fmt.Sprintf("Founder genotypes loaded from real-data dataset '%s'; subsequent generations (selection, recombination, mutation) are still simulated.", req.Dataset)
+	}
 	out := []string{
-		"Synthetic population; no real genotype or phenotype data ingested.",
+		founderStmt,
 		"Mock genomic-selection signal; production genomic prediction (GBLUP/Bayesian/ML) not yet integrated.",
 		"Additive trait architecture; no dominance or epistasis modelled.",
 		fmt.Sprintf("Heritability h² = %.2f and selection percent = %g%% applied uniformly across generations.", req.Heritability, req.SelectionPercent),
@@ -1028,7 +1075,11 @@ func mostBinding(counts map[string]int, total int) string {
 }
 
 func buildHonestyBanner(req SimRequest) string {
-	parts := []string{"Decision-layer simulator on synthetic data"}
+	first := "Decision-layer simulator on synthetic data"
+	if datasetSelected(req.Dataset) {
+		first = fmt.Sprintf("Decision-layer simulator on real founder genotypes (%s) with synthetic selection/recombination/mutation", req.Dataset)
+	}
+	parts := []string{first}
 	if req.CrisprEnabled {
 		parts = append(parts, "minimal CRISPR demo (not guide design, not wet-lab protocol)")
 	}
@@ -1037,13 +1088,17 @@ func buildHonestyBanner(req SimRequest) string {
 }
 
 func buildLimitations(req SimRequest) []string {
+	germplasmStmt := "No real germplasm, pedigree, or field-trial data ingested — every run uses a generated synthetic population."
+	if datasetSelected(req.Dataset) {
+		germplasmStmt = "Real founder genotypes are loaded for the starting generation, but selection / recombination / mutation in subsequent generations are still simulated — there is no real field-trial or pedigree data driving the trajectory."
+	}
 	out := []string{
 		"Diploid biallelic markers; no copy-number variation, no structural variants.",
 		"Simplified Mendelian inheritance; recombination map is uniform, no chromosome structure.",
 		"Additive trait architecture only; no dominance, no epistasis, no pleiotropy.",
 		"No genotype-by-environment (GxE) interaction; trait expression treated as environment-invariant.",
 		"No production genomic-prediction model (GBLUP / Bayesian / ML); the predictor is a mock signal for demonstration only.",
-		"No real germplasm, pedigree, or field-trial data ingested — every run uses a generated synthetic population.",
+		germplasmStmt,
 		"Risk thresholds are user-set, not learned from program history.",
 	}
 	if req.CrisprEnabled {

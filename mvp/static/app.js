@@ -41,6 +41,7 @@ function numberValue(id) {
 
 function requestFromForm() {
   return {
+    dataset: (byId('dataset') && byId('dataset').value) || 'synthetic',
     seed: Math.trunc(numberValue('seed')),
     population_size: Math.trunc(numberValue('population_size')),
     markers: Math.trunc(numberValue('markers')),
@@ -654,6 +655,7 @@ function downloadBlob(text, filename, type) {
 function requestSignature(req) {
   if (!req) return '';
   return JSON.stringify({
+    dataset: String(req.dataset || 'synthetic'),
     seed: Number(req.seed) || 0,
     population_size: Number(req.population_size) || 0,
     markers: Number(req.markers) || 0,
@@ -681,6 +683,7 @@ function requestSignature(req) {
 
 function changedParams(prevReq, curReq) {
   const fields = [
+    ['dataset', 'dataset'],
     ['seed', 'seed'],
     ['population_size', 'N'],
     ['markers', 'markers'],
