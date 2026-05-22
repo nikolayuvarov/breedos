@@ -43,6 +43,19 @@ const PLAYBACK_FRAME_MS = 90;   // ~11 fps; fast enough to feel live, slow
                                 // enough that an 8-generation backend run
                                 // takes ~720ms in the UI.
 
+// v0.7.15 budget meter. Mirrors the server-side cap in validateRequest():
+//   budget = N × markers × (generations+1) × strategies × replicates ≤ 1.5B
+// The meter is the only place the user sees this number before clicking Run;
+// without it the only signal is a 400 after submit, which is easy to mistake
+// for a stuck client state when reducing one parameter still leaves budget
+// over cap. Cap was raised from 800M to 1.5B in v0.7.15 — prod is single-core
+// so the upper-bound run is ~30–60s wall-clock, still acceptable for the demo.
+const BUDGET_CAP = 1500000000;
+const BUDGET_WARN_FRAC = 0.7;
+// Inputs that multiply into the budget formula. Highlighted red when over cap
+// so the user immediately sees which knobs to turn down.
+const BUDGET_INPUT_IDS = ['population_size', 'markers', 'generations', 'replicates'];
+
 function byId(id) { return document.getElementById(id); }
 
 function numberValue(id) {
@@ -89,6 +102,7 @@ function setFormValues(values) {
     if (el.type === 'checkbox') el.checked = Boolean(value);
     else el.value = String(value);
   }
+  updateBudgetMeter();
 }
 
 const presets = {
@@ -178,6 +192,15 @@ async function runSimulation() {
   const request = requestFromForm();
   if (currentData && requestSignature(request) === requestSignature(currentData.request || {})) {
     setStatus('No parameter changes since the current run. Recalculation skipped.', 'ok');
+    return;
+  }
+  // v0.7.15: stop the request from leaving the browser if the run is over the
+  // server-side budget cap. Without this the user sees a generic 400, and
+  // reducing one parameter while the rest still keep budget over cap looks
+  // like a stuck client.
+  if (updateBudgetMeter().over) {
+    const cells = formatCells(runBudgetCells(request));
+    setStatus(`Run budget ${cells} cells exceeds the MVP cap of ${formatCells(BUDGET_CAP)}. Reduce population size, markers, generations, or replicates.`, 'error');
     return;
   }
   const originalText = btn ? btn.textContent : '';
@@ -875,6 +898,71 @@ function expectedMutationFlips(req) {
   return (Number(req.population_size) || 0) * (Number(req.markers) || 0) * 2 * (Number(req.generations) || 0) * (Number(req.mutation_rate) || 0);
 }
 
+// Mirrors buildStrategyConfigs() in main.go. Keep in sync if strategies change.
+function strategyCountForRequest(req) {
+  const advanced = String(req.strategy_set || 'core') === 'advanced';
+  const base = advanced ? 9 : 4;
+  const crisprActive = Boolean(req.crispr_enabled) && (Number(req.crispr_edits) || 0) > 0;
+  if (!crisprActive) return base;
+  return base + (advanced ? 2 : 1);
+}
+
+function runBudgetCells(req) {
+  const n = Number(req.population_size) || 0;
+  const m = Number(req.markers) || 0;
+  const g = (Number(req.generations) || 0) + 1;
+  const s = strategyCountForRequest(req);
+  const r = Math.max(1, Number(req.replicates) || 0);
+  return n * m * g * s * r;
+}
+
+function formatCells(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  if (n >= 1e9) return (n / 1e9).toFixed(n >= 1e10 ? 1 : 2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e8 ? 0 : 1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(0) + 'k';
+  return String(Math.round(n));
+}
+
+// Returns { over: bool } so callers (runSimulation) can pre-flight the request.
+function updateBudgetMeter() {
+  const el = byId('budgetMeter');
+  if (!el) return { over: false };
+  const req = requestFromForm();
+  const budget = runBudgetCells(req);
+  const strategies = strategyCountForRequest(req);
+  const over = budget > BUDGET_CAP;
+  const warn = !over && budget > BUDGET_CAP * BUDGET_WARN_FRAC;
+  el.classList.remove('warn', 'over');
+  if (over) el.classList.add('over');
+  else if (warn) el.classList.add('warn');
+  const formula = `${req.population_size || 0} N × ${req.markers || 0} markers × ${(Number(req.generations) || 0) + 1} gens × ${strategies} strategies × ${Math.max(1, Number(req.replicates) || 0)} reps`;
+  let hint;
+  if (over) {
+    hint = `Over the ${formatCells(BUDGET_CAP)} cap — Run is disabled. Reduce population, markers, generations, or replicates.`;
+  } else if (warn) {
+    hint = `Near the ${formatCells(BUDGET_CAP)} cap — close to MVP limit.`;
+  } else {
+    hint = `MVP cap is ${formatCells(BUDGET_CAP)} cells per run.`;
+  }
+  el.innerHTML = `Run budget: <strong>${formatCells(budget)} cells</strong> <small>${formula}</small><small>${hint}</small>`;
+  const btn = byId('runBtn');
+  if (btn) {
+    if (over) btn.setAttribute('disabled', 'disabled');
+    else btn.removeAttribute('disabled');
+  }
+  // Highlight every input that multiplies into the budget, so the user can
+  // see at a glance which knobs to turn down. We don't single one out — they
+  // all contribute multiplicatively, any of them works.
+  for (const id of BUDGET_INPUT_IDS) {
+    const input = byId(id);
+    if (!input) continue;
+    if (over) input.classList.add('over-budget');
+    else input.classList.remove('over-budget');
+  }
+  return { over };
+}
+
 function formatParamValue(v) {
   if (v === null || v === undefined) return '-';
   if (typeof v === 'boolean') return v ? 'yes' : 'no';
@@ -886,6 +974,7 @@ function formatParamValue(v) {
 }
 
 function markDirty(reason) {
+  updateBudgetMeter();
   const req = requestFromForm();
   const currentSig = currentData ? requestSignature(currentData.request || {}) : '';
   const nextSig = requestSignature(req);
@@ -965,6 +1054,11 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   document.querySelectorAll('input, select').forEach(input => {
     input.addEventListener('change', () => markDirty(`${input.id} changed`));
+    // 'input' fires while typing — keeps the budget meter reactive without
+    // waiting for blur. markDirty itself stays on 'change' so the status text
+    // doesn't churn on every keystroke.
+    input.addEventListener('input', () => updateBudgetMeter());
   });
+  updateBudgetMeter();
   setStatus('Ready. Press Run simulation to calculate.', '');
 });

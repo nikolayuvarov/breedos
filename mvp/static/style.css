@@ -251,6 +251,14 @@ input[type="checkbox"] { transform: scale(1.15); }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--ok); }
 .status.dirty { color: #ffd38c; }
+.budget-meter { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.45; }
+.budget-meter strong { color: var(--ok); font-weight: 700; }
+.budget-meter.warn strong { color: var(--warn); }
+.budget-meter.over strong { color: var(--danger); }
+.budget-meter small { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; }
+.budget-meter.over small { color: var(--danger); }
+.btn.primary[disabled] { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.4); }
+input.over-budget { border-color: var(--danger); background: rgba(255, 154, 154, 0.08); box-shadow: 0 0 0 1px var(--danger); }
 .results { display: grid; gap: 18px; min-width: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .metric-card { padding: 14px; border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); }

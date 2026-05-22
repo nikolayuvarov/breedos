@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.15] - 2026-05-22
+
+### Added — Live budget meter under Run
+
+`mvp/static/demo.html` shows a budget meter directly below the Run button. It prints the current run budget in cells (`N × markers × (generations+1) × strategies × replicates`), the formula breakdown, and the cap. The meter is reactive — updates on every keystroke via an `input` listener, not just on `change` — so the user sees the impact of typing as it happens.
+
+States:
+- **OK** (< 70% of cap): muted text, green budget number, Run enabled.
+- **Warn** (70–100% of cap): warn-yellow budget number, Run still enabled.
+- **Over** (> cap): red budget number, Run button disabled, and the four numeric inputs that multiply into the budget (`population_size`, `markers`, `generations`, `replicates`) get a red `over-budget` outline so the user can immediately see which knobs to turn down.
+
+Pre-flight check in `runSimulation()` short-circuits over-budget submits so the request never leaves the browser — previously the only signal was a generic 400 after submit, which was easy to mistake for stuck client state when reducing one parameter still left the run over cap.
+
+### Changed — Budget cap raised 800M → 1.5B
+
+`validateRequest()` in `main.go` now caps `budget` at 1,500,000,000 (was 800,000,000). Rationale: 800M was set in the initial v0.6 commit without recorded justification; benchmarks show wall-clock cost is ~2.2–2.7 ns per cell on dev (multi-core), and the prod box is a single-core VPS. Raising to 1.5B keeps the upper-bound run at ~30–60 s on prod — long but tolerable for a public demo. The JS `BUDGET_CAP` constant in `app.js` is kept in sync.
+
+### Changed
+- Version strings bumped `v0.7.14` → `v0.7.15` across `main.go`, all four landing footers, demo kicker, and datasets-page kicker.
+
 ## [0.7.14] - 2026-05-22
 
 ### Fixed — Live histogram stuck on gen-0 (real root cause)

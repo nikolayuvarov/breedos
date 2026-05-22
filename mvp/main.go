@@ -567,7 +567,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.14 enqueues the tracked (histogram) task FIRST in the worker pool so per-generation snapshots start arriving on poll #1 — before v0.7.14 the tracked task could sit unstarted for ~10s on slow servers while other strategies ran. Also embeds a favicon. v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.15 raises the per-run budget cap to 1.5B cells and adds a live budget meter under Run — over-cap configurations are blocked in the browser with the contributing inputs (population, markers, generations, replicates) highlighted, so the user no longer hits an opaque 400 after submit. v0.7.14 enqueues the tracked (histogram) task FIRST in the worker pool so per-generation snapshots start arriving on poll #1; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -607,7 +607,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.14 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.15 caps the budget at 1.5B cells and uses a worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -1467,8 +1467,8 @@ func validateRequest(req SimRequest, strategyCount int) error {
 		return errors.New("diversity_loss_limit must be in (0, 1]")
 	}
 	budget := simulationBudget(req, strategyCount)
-	if budget > 800000000 {
-		return fmt.Errorf("simulation budget too high: population_size * markers * (generations + 1) * strategies * replicates must be <= 800,000,000 for the MVP; got %d", budget)
+	if budget > 1500000000 {
+		return fmt.Errorf("simulation budget too high: population_size * markers * (generations + 1) * strategies * replicates must be <= 1,500,000,000 for the MVP; got %d", budget)
 	}
 	return nil
 }
