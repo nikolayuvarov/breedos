@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.9] - 2026-05-22
+
+### Fixed — Demo-grid width (proper fix)
+
+The v0.7.8 attempt (`min-width: 0` on grid items) wasn't sufficient. Stronger fix:
+
+- `grid-template-columns: 360px 1fr` → `360px minmax(0, 1fr)`. Bare `1fr` resolves its minimum size to the column's min-content (which was being inflated by 900-px-wide canvases and a 14-column strategy table). `minmax(0, 1fr)` explicitly caps the minimum at 0, so the column never expands the grid past the parent `.wrap`.
+- `max-width: 100%` belt-and-suspenders on `.demo-grid`.
+
+### Fixed — Browser cache serving stale CSS / JS across deploys
+
+The Go static handler did not set any cache headers, so browsers heuristic-cached `/style.css`, `/app.js`, and `/index.html` for several minutes. After a deploy, users would still see the previous version's styles even though the new binary was serving fresh content.
+
+Two-pronged fix:
+
+- The static handler now emits `Cache-Control: no-cache, must-revalidate` on every response. Browsers will revalidate on each load. (Bandwidth impact is small; the assets are tens of KB and we always send 200, but at least we are never stale.)
+- All five HTML files reference `<link rel="stylesheet" href="/style.css?v=v0.7.9">`. The query string busts the URL-keyed cache for already-cached browsers that load the new HTML first.
+
+### Changed
+- Version strings bumped `v0.7.8` → `v0.7.9` in `main.go` run notes, all four landing footers, and the demo kicker.
+
+### Background
+- The user reported that after the v0.7.8 deploy the demo-grid was still visibly wider than the top hero cards. Diagnosed two contributing causes: (a) `min-width: 0` on grid items isn't enough when the track itself is `1fr` (track resolves min size to min-content), and (b) browser cache likely served the v0.7.7 CSS even though the v0.7.8 binary was serving fresh content. This release addresses both.
+
 ## [0.7.8] - 2026-05-22
 
 ### Fixed — Demo-grid width / top hero narrower than bottom

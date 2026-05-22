@@ -198,9 +198,16 @@ ul.clean { padding-left: 19px; color: var(--muted); line-height: 1.7; }
 .demo-shell { padding: 26px 0 60px; }
 .demo-grid {
   display: grid;
-  grid-template-columns: 360px 1fr;
+  /* v0.7.9: minmax(0, 1fr) instead of bare 1fr so the right column does NOT
+     resolve its min size to min-content. Combined with the v0.7.8
+     min-width: 0 on grid items, this finally caps demo-grid at the parent
+     .wrap width (the v0.7.8 fix alone wasn't sufficient — bare 1fr still
+     expanded the track past .wrap when canvases + 14-column tables were
+     present). */
+  grid-template-columns: 360px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
+  max-width: 100%;
 }
 .form-grid { display: grid; gap: 12px; }
 .field label {
