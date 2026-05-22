@@ -192,11 +192,16 @@ for d in m.get("datasets", []):
     print("\t".join([d["filename"], d.get("deploy_strategy", "manual"), str(truncate_mb)]))
 ' "$MANIFEST_PATH")"
   if [[ -n "$ENTRIES" ]]; then
-    if ! ssh "$REMOTE_HOST" "mkdir -p '${REMOTE_DATASETS_DIR}'"; then
+    if ! ssh -n "$REMOTE_HOST" "mkdir -p '${REMOTE_DATASETS_DIR}'"; then
       echo "[deploy] ERROR: could not mkdir ${REMOTE_DATASETS_DIR} on remote" >&2
       exit 5
     fi
-    while IFS=$'\t' read -r fname strategy truncate_mb; do
+    # Read entries into an array so scp/ssh inside the loop don't consume the
+    # heredoc's stdin and silently break iteration after the first scp.
+    mapfile -t DATASET_LINES <<<"$ENTRIES"
+    for line in "${DATASET_LINES[@]}"; do
+      [[ -z "$line" ]] && continue
+      IFS=$'\t' read -r fname strategy truncate_mb <<<"$line"
       [[ -z "$fname" ]] && continue
       local_path="${SCRIPT_DIR}/datasets/${fname}"
       if [[ ! -f "$local_path" ]]; then
@@ -204,7 +209,7 @@ for d in m.get("datasets", []):
         continue
       fi
       local_size="$(stat -c %s "$local_path")"
-      remote_size_raw="$(ssh "$REMOTE_HOST" "stat -c %s '${REMOTE_DATASETS_DIR}${fname}' 2>/dev/null" || true)"
+      remote_size_raw="$(ssh -n "$REMOTE_HOST" "stat -c %s '${REMOTE_DATASETS_DIR}${fname}' 2>/dev/null" || true)"
       remote_size="${remote_size_raw//[^0-9]/}"
       case "$strategy" in
         full)
@@ -212,18 +217,17 @@ for d in m.get("datasets", []):
             echo "[deploy]   ${fname}: ${local_size} bytes on remote (full) — skip"
           else
             echo "[deploy]   ${fname}: uploading full ${local_size} bytes"
-            scp "$local_path" "${TARGET}data/datasets/${fname}"
+            scp "$local_path" "${TARGET}data/datasets/${fname}" < /dev/null
           fi
           ;;
         truncate_head_100mb)
           truncate_bytes=$(( truncate_mb * 1024 * 1024 ))
           if [[ "${BREEDOS_DEPLOY_FULL_LARGE:-0}" == "1" ]]; then
-            # Upload the entire local file (which may itself be a partial download)
             if [[ -n "$remote_size" && "$remote_size" == "$local_size" ]]; then
               echo "[deploy]   ${fname}: ${local_size} bytes on remote (full override) — skip"
             else
               echo "[deploy]   ${fname}: uploading full ${local_size} bytes (BREEDOS_DEPLOY_FULL_LARGE=1)"
-              scp "$local_path" "${TARGET}data/datasets/${fname}"
+              scp "$local_path" "${TARGET}data/datasets/${fname}" < /dev/null
             fi
           else
             target_bytes=$(( local_size < truncate_bytes ? local_size : truncate_bytes ))
@@ -233,7 +237,7 @@ for d in m.get("datasets", []):
               tmp_trunc="$(mktemp "/tmp/breedos-trunc.XXXXXX")"
               head -c "$target_bytes" "$local_path" > "$tmp_trunc"
               echo "[deploy]   ${fname}: uploading head -c ${target_bytes} of ${local_size} bytes"
-              scp "$tmp_trunc" "${TARGET}data/datasets/${fname}"
+              scp "$tmp_trunc" "${TARGET}data/datasets/${fname}" < /dev/null
               rm -f "$tmp_trunc"
             fi
           fi
@@ -245,7 +249,7 @@ for d in m.get("datasets", []):
           echo "[deploy]   ${fname}: unknown deploy_strategy=${strategy} — skip" >&2
           ;;
       esac
-    done <<<"$ENTRIES"
+    done
   fi
 fi
 
