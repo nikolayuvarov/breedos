@@ -318,3 +318,111 @@ func TestEnsureExecutableSetsExecBit(t *testing.T) {
 		t.Fatalf("owner exec bit should be set after ensureExecutable; got mode %o", info.Mode().Perm())
 	}
 }
+
+// v0.7.3 constraint-engine tests (Issue 03).
+
+func TestConstraintEngineFeasibleStrategyExists(t *testing.T) {
+	req := SimRequest{
+		Seed: 12345, PopulationSize: 60, Markers: 100, QTLCount: 12,
+		Generations: 8, SelectionPercent: 20, Heritability: 0.5,
+		MutationRate: 0.0001, StrategySet: "core", Replicates: 2,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.30,
+		// Permissive floor: 0.01 gain is trivially achievable by most strategies.
+		MinGeneticGain: 0.01,
+	}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation: %v", err)
+	}
+	feasibleCount := 0
+	for _, s := range resp.Strategies {
+		if s.Final.Feasible {
+			feasibleCount++
+		}
+	}
+	if feasibleCount == 0 {
+		t.Fatalf("expected at least one feasible strategy under permissive constraint; got 0")
+	}
+	if resp.Decision.BestFeasibleCode == "" {
+		t.Fatalf("expected BestFeasibleCode to be populated when feasible strategies exist")
+	}
+	if len(resp.Decision.ConstraintsApplied) == 0 {
+		t.Fatalf("expected ConstraintsApplied to list the active constraint")
+	}
+}
+
+func TestConstraintEngineNoFeasibleStrategy(t *testing.T) {
+	req := SimRequest{
+		Seed: 67890, PopulationSize: 40, Markers: 100, QTLCount: 10,
+		Generations: 12, SelectionPercent: 15, Heritability: 0.5,
+		MutationRate: 0.0001, StrategySet: "core", Replicates: 2,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.30,
+		// Impossibly tight: every selection scheme on this small N will exceed.
+		MaxInbreeding: 0.001,
+	}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation: %v", err)
+	}
+	for _, s := range resp.Strategies {
+		if s.Final.Feasible {
+			t.Fatalf("expected no feasible strategy under impossibly tight inbreeding cap; %s was feasible", s.Code)
+		}
+		if len(s.Final.FailedConstraints) == 0 {
+			t.Fatalf("expected %s to list at least one failed constraint", s.Code)
+		}
+	}
+	if resp.Decision.BestFeasibleCode != "" {
+		t.Fatalf("expected BestFeasibleCode to be empty when nothing is feasible; got %q", resp.Decision.BestFeasibleCode)
+	}
+	if !strings.Contains(strings.ToLower(resp.Decision.FeasibilityNote), "inbreeding") {
+		t.Fatalf("expected FeasibilityNote to reference inbreeding as the binding constraint; got %q", resp.Decision.FeasibilityNote)
+	}
+}
+
+func TestConstraintEngineAggressiveRejectedByRiskCap(t *testing.T) {
+	req := SimRequest{
+		Seed: 24680, PopulationSize: 40, Markers: 100, QTLCount: 12,
+		Generations: 15, SelectionPercent: 12, Heritability: 0.5,
+		MutationRate: 0.0001, StrategySet: "core", Replicates: 3,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.30,
+		// Risk cap that aggressive selection (which drives inbreeding/diversity
+		// risk up under heavy selection on small N) cannot pass.
+		MaxCombinedRisk: 0.20,
+	}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation: %v", err)
+	}
+	var aggressive *StrategyResult
+	for i := range resp.Strategies {
+		if resp.Strategies[i].Code == "aggressive" {
+			aggressive = &resp.Strategies[i]
+			break
+		}
+	}
+	if aggressive == nil {
+		t.Fatalf("expected 'aggressive' strategy in core set; got: %v", strategyCodes(resp.Strategies))
+	}
+	if aggressive.Final.Feasible {
+		t.Fatalf("expected aggressive to be infeasible under tight risk cap; actual combined risk %.4f", combinedRisk(aggressive.Final))
+	}
+	hasRiskFailure := false
+	for _, fc := range aggressive.Final.FailedConstraints {
+		if strings.HasPrefix(fc, "combined risk ") {
+			hasRiskFailure = true
+			break
+		}
+	}
+	if !hasRiskFailure {
+		t.Fatalf("expected aggressive FailedConstraints to include 'combined risk ...'; got %v", aggressive.Final.FailedConstraints)
+	}
+}
+
+func strategyCodes(s []StrategyResult) []string {
+	out := make([]string, 0, len(s))
+	for _, r := range s {
+		out = append(out, r.Code)
+	}
+	return out
+}

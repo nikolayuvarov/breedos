@@ -40,6 +40,13 @@ type SimRequest struct {
 	WorkerCount        int     `json:"worker_count"`
 	InbreedingLimit    float64 `json:"inbreeding_limit"`
 	DiversityLossLimit float64 `json:"diversity_loss_limit"`
+	// v0.7.3 constraint engine (Issue 03). All zero = no constraint applied.
+	MaxInbreeding       float64 `json:"max_inbreeding"`
+	MaxDiversityLoss    float64 `json:"max_diversity_loss"`
+	MaxRareUsefulLoss   int     `json:"max_rare_useful_loss"`
+	MinGeneticGain      float64 `json:"min_genetic_gain"`
+	MinEffectiveParents int     `json:"min_effective_parents"`
+	MaxCombinedRisk     float64 `json:"max_combined_risk"`
 }
 
 type SimResponse struct {
@@ -55,6 +62,10 @@ type DecisionSummary struct {
 	BestRiskAdjustedName string       `json:"best_risk_adjusted_name"`
 	BestGainCode         string       `json:"best_gain_code"`
 	LowestRiskCode       string       `json:"lowest_risk_code"`
+	BestFeasibleCode     string       `json:"best_feasible_code"`
+	BestFeasibleName     string       `json:"best_feasible_name"`
+	FeasibilityNote      string       `json:"feasibility_note"`
+	ConstraintsApplied   []string     `json:"constraints_applied"`
 	ParetoCodes          []string     `json:"pareto_codes"`
 	Interpretation       []string     `json:"interpretation"`
 	Tradeoffs            []Tradeoff   `json:"tradeoffs"`
@@ -127,6 +138,8 @@ type FinalStats struct {
 	DecisionRank                 int     `json:"decision_rank"`
 	ParetoOptimal                bool    `json:"pareto_optimal"`
 	RecommendedNext              string  `json:"recommended_next"`
+	Feasible                     bool    `json:"feasible"`
+	FailedConstraints            []string `json:"failed_constraints"`
 }
 
 type EditCandidate struct {
@@ -402,6 +415,7 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 	reportProgress(progress, 5, "initial population, candidate edits, and strategy set ready")
 	results := simulateStrategiesDecisionEngine(req, strategies, initial, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, candidates, progress)
 	annotateDecisionScores(results)
+	annotateFeasibility(req, results, baseDiversity)
 	decision := buildDecisionSummary(req, results, baseDiversity)
 	reportProgress(progress, 98, "building response")
 	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity)}, nil
@@ -411,7 +425,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.2 emits a structured decision report (tradeoffs, avoid list, key assumptions, missing-data warnings, model limitations, what-could-be-wrong, next-analysis suggestion, summary text) and a one-line honesty banner. Monte Carlo replicates, risk probabilities, Pareto trade-offs, and the self-update watcher (--self-check + .UPDATE file) are inherited from v0.7.1.",
+		"BreedOS v0.7.3 adds a constraint engine (max inbreeding, max diversity loss, max rare-loci lost, min gain, min effective parents, max combined risk) that flags each strategy feasible/infeasible and surfaces a 'best feasible' selection in the decision report. v0.7.2 honesty layer (banner, limitations, what-could-be-wrong) and v0.7.1 self-update watcher (--self-check + .UPDATE file) are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -441,7 +455,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64) []stri
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.2 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.3 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -688,6 +702,76 @@ func combinedRisk(f FinalStats) float64 {
 	return 0.45*f.ProbabilityInbreedingBreach + 0.35*f.ProbabilityDiversityCollapse + 0.20*f.ProbabilityRareUsefulLoss
 }
 
+// v0.7.3 constraint engine (Issue 03).
+// Each constraint field on SimRequest is "off" when zero. Evaluation compares
+// the mean final outcome (FinalStats) against the user-supplied caps/floors.
+// The probability-breach metrics on FinalStats remain a separate risk signal —
+// they are not used as hard constraints here unless MaxCombinedRisk is set.
+func evaluateConstraints(req SimRequest, f FinalStats, baseDiversity float64) (bool, []string) {
+	failed := make([]string, 0)
+	if req.MaxInbreeding > 0 && f.Inbreeding > req.MaxInbreeding {
+		failed = append(failed, fmt.Sprintf("inbreeding %.4f > max %.4f", f.Inbreeding, req.MaxInbreeding))
+	}
+	if req.MaxDiversityLoss > 0 && baseDiversity > 0 {
+		loss := (baseDiversity - f.Diversity) / baseDiversity
+		if loss > req.MaxDiversityLoss {
+			failed = append(failed, fmt.Sprintf("diversity loss %.4f > max %.4f (fraction of baseline)", loss, req.MaxDiversityLoss))
+		}
+	}
+	if req.MaxRareUsefulLoss > 0 && f.RareUsefulLost > req.MaxRareUsefulLoss {
+		failed = append(failed, fmt.Sprintf("rare-useful loci lost %d > max %d", f.RareUsefulLost, req.MaxRareUsefulLoss))
+	}
+	if req.MinGeneticGain > 0 && f.GeneticGain < req.MinGeneticGain {
+		failed = append(failed, fmt.Sprintf("genetic gain %.4f < min %.4f", f.GeneticGain, req.MinGeneticGain))
+	}
+	if req.MinEffectiveParents > 0 && f.EffectiveParents < req.MinEffectiveParents {
+		failed = append(failed, fmt.Sprintf("effective parents %d < min %d", f.EffectiveParents, req.MinEffectiveParents))
+	}
+	if req.MaxCombinedRisk > 0 && combinedRisk(f) > req.MaxCombinedRisk {
+		failed = append(failed, fmt.Sprintf("combined risk %.4f > max %.4f", combinedRisk(f), req.MaxCombinedRisk))
+	}
+	return len(failed) == 0, failed
+}
+
+func annotateFeasibility(req SimRequest, results []StrategyResult, baseDiversity float64) {
+	for i := range results {
+		feasible, failed := evaluateConstraints(req, results[i].Final, baseDiversity)
+		if failed == nil {
+			failed = []string{}
+		}
+		results[i].Final.Feasible = feasible
+		results[i].Final.FailedConstraints = failed
+	}
+}
+
+func anyConstraintActive(req SimRequest) bool {
+	return req.MaxInbreeding > 0 || req.MaxDiversityLoss > 0 || req.MaxRareUsefulLoss > 0 ||
+		req.MinGeneticGain > 0 || req.MinEffectiveParents > 0 || req.MaxCombinedRisk > 0
+}
+
+func constraintsAppliedList(req SimRequest) []string {
+	out := make([]string, 0, 6)
+	if req.MaxInbreeding > 0 {
+		out = append(out, fmt.Sprintf("max inbreeding ≤ %.4f", req.MaxInbreeding))
+	}
+	if req.MaxDiversityLoss > 0 {
+		out = append(out, fmt.Sprintf("max diversity loss ≤ %.4f (fraction of baseline)", req.MaxDiversityLoss))
+	}
+	if req.MaxRareUsefulLoss > 0 {
+		out = append(out, fmt.Sprintf("max rare-useful loci lost ≤ %d", req.MaxRareUsefulLoss))
+	}
+	if req.MinGeneticGain > 0 {
+		out = append(out, fmt.Sprintf("min genetic gain ≥ %.4f", req.MinGeneticGain))
+	}
+	if req.MinEffectiveParents > 0 {
+		out = append(out, fmt.Sprintf("min effective parents ≥ %d", req.MinEffectiveParents))
+	}
+	if req.MaxCombinedRisk > 0 {
+		out = append(out, fmt.Sprintf("max combined risk ≤ %.4f", req.MaxCombinedRisk))
+	}
+	return out
+}
+
 func buildDecisionSummary(req SimRequest, results []StrategyResult, baseDiversity float64) DecisionSummary {
 	if len(results) == 0 {
 		return DecisionSummary{}
@@ -711,18 +795,44 @@ func buildDecisionSummary(req SimRequest, results []StrategyResult, baseDiversit
 		}
 	}
 	best, bestGain, lowest := results[bestRiskIdx], results[bestGainIdx], results[lowestRiskIdx]
+	// v0.7.3: best feasible — top risk-adjusted score among strategies that pass user constraints.
+	bestFeasibleIdx := -1
+	for i := range results {
+		if !results[i].Final.Feasible {
+			continue
+		}
+		if bestFeasibleIdx == -1 || results[i].Final.RiskAdjustedScore > results[bestFeasibleIdx].Final.RiskAdjustedScore {
+			bestFeasibleIdx = i
+		}
+	}
+	constraintsApplied := constraintsAppliedList(req)
+	feasibilityNote, bestFeasibleCode, bestFeasibleName := buildFeasibilityNote(req, results, bestFeasibleIdx, constraintsApplied)
+	interpretation := []string{
+		fmt.Sprintf("Recommended risk-adjusted strategy: %s (score %.4f, rank #%d).", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank),
+		fmt.Sprintf("Maximum final gain is produced by %s, but compare its risk probabilities before treating it as deployable.", bestGain.Name),
+		fmt.Sprintf("Lowest combined risk is produced by %s.", lowest.Name),
+	}
+	if len(constraintsApplied) > 0 {
+		if bestFeasibleIdx >= 0 {
+			interpretation = append(interpretation, fmt.Sprintf("Best strategy that satisfies your %d constraint(s): %s (risk-adjusted score %.4f).", len(constraintsApplied), bestFeasibleName, results[bestFeasibleIdx].Final.RiskAdjustedScore))
+		} else {
+			interpretation = append(interpretation, fmt.Sprintf("No strategy satisfies your %d constraint(s) — relax limits or expand the strategy set.", len(constraintsApplied)))
+		}
+	} else {
+		interpretation = append(interpretation, "No hard constraints supplied — the ranking is purely risk-adjusted. Add constraints (max inbreeding, min gain, etc.) to filter to feasible strategies only.")
+	}
+	interpretation = append(interpretation, "Use the Pareto chart to choose a trade-off, not a single metric. Real BreedOS should optimize under explicit constraints supplied by the breeding program.")
 	d := DecisionSummary{
 		BestRiskAdjustedCode: best.Code,
 		BestRiskAdjustedName: best.Name,
 		BestGainCode:         bestGain.Code,
 		LowestRiskCode:       lowest.Code,
+		BestFeasibleCode:     bestFeasibleCode,
+		BestFeasibleName:     bestFeasibleName,
+		FeasibilityNote:      feasibilityNote,
+		ConstraintsApplied:   constraintsApplied,
 		ParetoCodes:          pareto,
-		Interpretation: []string{
-			fmt.Sprintf("Recommended risk-adjusted strategy: %s (score %.4f, rank #%d).", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank),
-			fmt.Sprintf("Maximum final gain is produced by %s, but compare its risk probabilities before treating it as deployable.", bestGain.Name),
-			fmt.Sprintf("Lowest combined risk is produced by %s.", lowest.Name),
-			"Use the Pareto chart to choose a trade-off, not a single metric. Real BreedOS should optimize under explicit constraints supplied by the breeding program.",
-		},
+		Interpretation:       interpretation,
 	}
 	d.Tradeoffs = buildTradeoffs(results, best, bestGain, lowest, pareto)
 	d.AvoidStrategies = buildAvoidList(results)
@@ -855,6 +965,68 @@ func buildMissingDataWarnings(req SimRequest, baseDiversity float64) []string {
 	return out
 }
 
+func buildFeasibilityNote(req SimRequest, results []StrategyResult, bestFeasibleIdx int, constraintsApplied []string) (note, code, name string) {
+	if len(constraintsApplied) == 0 {
+		return "No hard constraints were applied. All strategies treated as feasible; ranking is risk-adjusted only.", "", ""
+	}
+	feasibleCount := 0
+	for _, r := range results {
+		if r.Final.Feasible {
+			feasibleCount++
+		}
+	}
+	if bestFeasibleIdx >= 0 && feasibleCount > 0 {
+		best := results[bestFeasibleIdx]
+		return fmt.Sprintf("%d of %d strategies satisfy your constraints (%s). Best feasible: %s (risk-adjusted score %.4f, rank #%d).",
+			feasibleCount, len(results), strings.Join(constraintsApplied, "; "), best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank), best.Code, best.Name
+	}
+	// No feasible strategies — explain binding constraints by counting which fail most often.
+	failCount := make(map[string]int)
+	for _, r := range results {
+		for _, fc := range r.Final.FailedConstraints {
+			// FailedConstraints contain values; classify by the leading metric keyword.
+			label := classifyFailure(fc)
+			failCount[label]++
+		}
+	}
+	binding := mostBinding(failCount, len(results))
+	if binding == "" {
+		return fmt.Sprintf("No strategy satisfies your %d constraint(s) — consider relaxing limits, expanding the strategy set, or increasing replicates to reduce noise.", len(constraintsApplied)), "", ""
+	}
+	return fmt.Sprintf("No strategy satisfies your %d constraint(s). Binding limit appears to be %s — relax that first, or expand the strategy set / increase replicates.", len(constraintsApplied), binding), "", ""
+}
+
+func classifyFailure(msg string) string {
+	switch {
+	case strings.HasPrefix(msg, "inbreeding "):
+		return "max inbreeding"
+	case strings.HasPrefix(msg, "diversity loss "):
+		return "max diversity loss"
+	case strings.HasPrefix(msg, "rare-useful "):
+		return "max rare-useful loci lost"
+	case strings.HasPrefix(msg, "genetic gain "):
+		return "min genetic gain"
+	case strings.HasPrefix(msg, "effective parents "):
+		return "min effective parents"
+	case strings.HasPrefix(msg, "combined risk "):
+		return "max combined risk"
+	}
+	return msg
+}
+
+func mostBinding(counts map[string]int, total int) string {
+	bestK, bestV := "", 0
+	for k, v := range counts {
+		if v > bestV {
+			bestK, bestV = k, v
+		}
+	}
+	if total == 0 || bestV == 0 {
+		return ""
+	}
+	return bestK
+}
+
 func buildHonestyBanner(req SimRequest) string {
 	parts := []string{"Decision-layer simulator on synthetic data"}
 	if req.CrisprEnabled {
@@ -932,6 +1104,13 @@ func buildSummaryText(req SimRequest, d DecisionSummary, best, bestGain, lowest 
 		req.PopulationSize, req.Replicates, req.Generations)
 	fmt.Fprintf(&b, "Recommended (risk-adjusted): %s (score %.4f, rank #%d). ", best.Name, best.Final.RiskAdjustedScore, best.Final.DecisionRank)
 	fmt.Fprintf(&b, "Max gain: %s (%.4f). Lowest risk: %s (combined risk %.4f). ", bestGain.Name, bestGain.Final.GeneticGain, lowest.Name, combinedRisk(lowest.Final))
+	if len(d.ConstraintsApplied) > 0 {
+		if d.BestFeasibleCode != "" {
+			fmt.Fprintf(&b, "Best feasible (under %d constraint(s)): %s. ", len(d.ConstraintsApplied), d.BestFeasibleName)
+		} else {
+			fmt.Fprintf(&b, "No strategy satisfies the %d user constraint(s). ", len(d.ConstraintsApplied))
+		}
+	}
 	if len(d.ParetoCodes) > 0 {
 		fmt.Fprintf(&b, "Pareto-optimal: %s. ", strings.Join(d.ParetoCodes, ", "))
 	}

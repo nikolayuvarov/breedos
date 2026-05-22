@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-21
+
+### Added — Constraint engine and feasible-strategy selection (closes `issues-breedos/03`)
+
+The simulator now evaluates each strategy against user-supplied program constraints and surfaces a separate "best feasible" recommendation in the decision report.
+
+`SimRequest` adds six optional constraint fields (zero = no constraint):
+
+- `max_inbreeding` — hard cap on mean final inbreeding coefficient.
+- `max_diversity_loss` — hard cap on diversity loss as a fraction of baseline (e.g., 0.30 = lose at most 30%).
+- `max_rare_useful_loss` — hard cap on count of rare-useful loci lost.
+- `min_genetic_gain` — floor on final mean genetic gain.
+- `min_effective_parents` — floor on effective parent count.
+- `max_combined_risk` — hard cap on the combined risk score (weighted inbreeding-breach / diversity-collapse / rare-allele-loss probabilities).
+
+`FinalStats` per strategy adds:
+
+- `feasible` (bool) — true if all active constraints pass for that strategy's mean outcome.
+- `failed_constraints` (string slice) — human-readable list of which constraints were violated (e.g., `"inbreeding 0.3812 > max 0.2500"`).
+
+`DecisionSummary` adds:
+
+- `best_feasible_code` / `best_feasible_name` — top risk-adjusted strategy among feasible ones (empty when none feasible or no constraints applied).
+- `feasibility_note` — explanation that either names the best feasible strategy or identifies the most-binding constraint when nothing passes.
+- `constraints_applied` — human-readable list of the constraints that were evaluated for this run (e.g., `"max inbreeding ≤ 0.2500"`).
+
+When no constraints are supplied, behaviour is identical to v0.7.2 — every strategy is treated as feasible and the decision report explicitly notes "No hard constraints supplied".
+
+### Added — Constraint inputs in demo
+
+`demo.html` exposes a new collapsible "Program constraints" form section with the six fields. Each input defaults to 0 (no constraint). Numeric inputs validate as non-negative.
+
+### Added — Feasibility in decision report and strategy table
+
+`renderDecisionPanel` (`app.js`) now renders:
+
+- A "Best feasible" card alongside "Recommended" / "Max gain" / "Lowest risk".
+- A `feasibility-note` block summarising how many strategies passed and the most-binding constraint when none did.
+- A `constraints-applied` chip row showing the list of evaluated constraints.
+
+`renderStrategyTable` (`app.js`) adds a feasibility column showing ✓ / ✗ plus a tooltip listing the failed constraints. Infeasible rows are visually de-emphasised so the user reads feasible options first.
+
+### Added — Tests for the constraint engine
+
+`mvp/main_test.go` adds three test cases:
+
+- `TestConstraintEngineFeasibleStrategyExists` — sets a permissive `min_genetic_gain` floor and verifies at least one strategy is feasible and `BestFeasibleCode` is populated.
+- `TestConstraintEngineNoFeasibleStrategy` — sets an impossibly tight `max_inbreeding` and verifies `BestFeasibleCode` is empty and `FeasibilityNote` references the binding constraint.
+- `TestConstraintEngineAggressiveRejectedByRiskCap` — sets a tight `max_combined_risk` that aggressive selection cannot meet; verifies aggressive ends in `failed_constraints` while a more balanced strategy passes.
+
+### Changed
+- `buildSummaryText` now mentions feasibility status when constraints are active.
+- `Interpretation` list in DecisionSummary explicitly states whether constraints were supplied and which strategy is best feasible.
+- Run-notes mention v0.7.3 in the budget-guard line and main feature description.
+- Version strings bumped `v0.7.2` → `v0.7.3` in `main.go` run notes, `index.html` footer, and `demo.html` kicker.
+
+### Not in this release
+- No new selection strategies (out of scope per the issue).
+- No full mathematical optimisation (per the issue's non-goals).
+- Honesty layer (v0.7.2) and self-update mechanism (v0.7.1) unchanged.
+
 ## [0.7.2] - 2026-05-21
 
 ### Added — Scientific Honesty / Trust Layer (closes `issues-breedos/06`)

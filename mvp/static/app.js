@@ -56,7 +56,13 @@ function requestFromForm() {
     replicates: Math.trunc(numberValue('replicates')),
     worker_count: Math.trunc(numberValue('worker_count')),
     inbreeding_limit: numberValue('inbreeding_limit'),
-    diversity_loss_limit: numberValue('diversity_loss_limit')
+    diversity_loss_limit: numberValue('diversity_loss_limit'),
+    max_inbreeding: numberValue('max_inbreeding'),
+    max_diversity_loss: numberValue('max_diversity_loss'),
+    max_rare_useful_loss: Math.trunc(numberValue('max_rare_useful_loss')),
+    min_genetic_gain: numberValue('min_genetic_gain'),
+    min_effective_parents: Math.trunc(numberValue('min_effective_parents')),
+    max_combined_risk: numberValue('max_combined_risk')
   };
 }
 
@@ -271,6 +277,8 @@ function renderDecisionPanel(data) {
   const best = findStrategy(data, d.best_risk_adjusted_code);
   const bestGain = findStrategy(data, d.best_gain_code);
   const lowest = findStrategy(data, d.lowest_risk_code);
+  const bestFeasible = d.best_feasible_code ? findStrategy(data, d.best_feasible_code) : null;
+  const constraintsApplied = Array.isArray(d.constraints_applied) ? d.constraints_applied : [];
   const lines = (d.interpretation || []).map(x => `<li>${escapeHtml(x)}</li>`).join('');
   const pareto = (d.pareto_codes || []).map(code => `<span class="pill">${escapeHtml(labels[code] || code)}</span>`).join(' ');
   const tradeoffs = (d.tradeoffs || []).map(t => `<li><strong>${escapeHtml((labels[t.a] || t.a) + ' ↔ ' + (labels[t.b] || t.b))}</strong> <em>(${escapeHtml(t.theme)})</em><br><span>${escapeHtml(t.note)}</span></li>`).join('');
@@ -281,13 +289,25 @@ function renderDecisionPanel(data) {
   const limitations = (d.limitations || []).map(l => `<li>${escapeHtml(l)}</li>`).join('');
   const next = d.next_analysis ? `<p class="decision-next"><strong>Recommended next analysis:</strong> ${escapeHtml(d.next_analysis)}</p>` : '';
   const honesty = d.honesty_banner ? `<div class="decision-honesty-banner">${escapeHtml(d.honesty_banner)}</div>` : '';
+  const feasibilityCard = constraintsApplied.length
+    ? `<div class="decision-card feasible-card"><span>Best feasible</span><strong>${escapeHtml(bestFeasible ? (labels[bestFeasible.code] || bestFeasible.name) : 'none')}</strong><small>${bestFeasible ? 'risk-adjusted score ' + fmt(bestFeasible.final.risk_adjusted_score) : 'no strategy passes all constraints'}</small></div>`
+    : '';
+  const feasibilityNote = d.feasibility_note
+    ? `<div class="feasibility-note${bestFeasible ? '' : ' feasibility-note-empty'}"><strong>Feasibility:</strong> ${escapeHtml(d.feasibility_note)}</div>`
+    : '';
+  const constraintsChips = constraintsApplied.length
+    ? `<div class="constraints-applied"><strong>Constraints applied:</strong> ${constraintsApplied.map(c => `<span class="pill">${escapeHtml(c)}</span>`).join(' ')}</div>`
+    : '';
   el.innerHTML = `
     ${honesty}
-    <div class="decision-grid">
+    <div class="decision-grid${constraintsApplied.length ? ' decision-grid-4' : ''}">
       <div class="decision-card"><span>Recommended</span><strong>${escapeHtml(best ? (labels[best.code] || best.name) : '-')}</strong><small>risk-adjusted score ${best ? fmt(best.final.risk_adjusted_score) : '-'}</small></div>
       <div class="decision-card"><span>Max gain</span><strong>${escapeHtml(bestGain ? (labels[bestGain.code] || bestGain.name) : '-')}</strong><small>${bestGain ? fmt(bestGain.final.genetic_gain) : '-'} final gain</small></div>
       <div class="decision-card"><span>Lowest risk</span><strong>${escapeHtml(lowest ? (labels[lowest.code] || lowest.name) : '-')}</strong><small>${lowest ? fmt(combinedRisk(lowest.final)) : '-'} combined risk</small></div>
+      ${feasibilityCard}
     </div>
+    ${feasibilityNote}
+    ${constraintsChips}
     <ul class="decision-list">${lines}</ul>
     <div class="pareto-list"><strong>Pareto candidates:</strong> ${pareto || '-'}</div>
     ${next}
@@ -369,7 +389,7 @@ function renderEditTable(edits) {
 
 function renderStrategyTable(strategies, prev) {
   if (!strategies.length) {
-    byId('strategyTable').innerHTML = '<tr><td colspan="13">No strategies returned.</td></tr>';
+    byId('strategyTable').innerHTML = '<tr><td colspan="14">No strategies returned.</td></tr>';
     return;
   }
   byId('strategyTable').innerHTML = strategies.map(s => {
@@ -379,8 +399,15 @@ function renderStrategyTable(strategies, prev) {
       `div ${signedDelta(s.final.diversity - p.final.diversity)}`,
       `F ${signedDelta(s.final.inbreeding - p.final.inbreeding)}`
     ].join('<br>') : '-';
+    const failed = Array.isArray(s.final.failed_constraints) ? s.final.failed_constraints : [];
+    const feasibleCell = s.final.feasible
+      ? '<span class="feasible-yes" title="Passes all active constraints">✓</span>'
+      : (failed.length
+        ? `<span class="feasible-no" title="${escapeHtml(failed.join('; '))}">✗ <small>${failed.length}</small></span>`
+        : '<span>—</span>');
+    const rowClass = s.final.feasible === false && failed.length ? ' class="row-infeasible"' : '';
     return `
-      <tr>
+      <tr${rowClass}>
         <td><strong style="color:${colors[s.code] || '#fff'}">${escapeHtml(labels[s.code] || s.name)}</strong><br><span>${escapeHtml(s.summary)}</span></td>
         <td>${formatInt(s.final.decision_rank)}</td>
         <td>${fmt(s.final.risk_adjusted_score)}</td>
@@ -392,6 +419,7 @@ function renderStrategyTable(strategies, prev) {
         <td>${formatInt(s.final.fixed_loci)}</td>
         <td>${formatInt(s.final.effective_parents)}</td>
         <td>${s.final.pareto_optimal ? 'yes' : 'no'}</td>
+        <td>${feasibleCell}</td>
         <td>${delta}</td>
         <td>${escapeHtml(s.final.recommended_next)}</td>
       </tr>
@@ -641,7 +669,13 @@ function requestSignature(req) {
     replicates: Number(req.replicates) || 0,
     worker_count: Number(req.worker_count) || 0,
     inbreeding_limit: Number(req.inbreeding_limit) || 0,
-    diversity_loss_limit: Number(req.diversity_loss_limit) || 0
+    diversity_loss_limit: Number(req.diversity_loss_limit) || 0,
+    max_inbreeding: Number(req.max_inbreeding) || 0,
+    max_diversity_loss: Number(req.max_diversity_loss) || 0,
+    max_rare_useful_loss: Number(req.max_rare_useful_loss) || 0,
+    min_genetic_gain: Number(req.min_genetic_gain) || 0,
+    min_effective_parents: Number(req.min_effective_parents) || 0,
+    max_combined_risk: Number(req.max_combined_risk) || 0
   });
 }
 
@@ -662,7 +696,13 @@ function changedParams(prevReq, curReq) {
     ['replicates', 'replicates'],
     ['worker_count', 'worker count'],
     ['inbreeding_limit', 'inbreeding limit'],
-    ['diversity_loss_limit', 'diversity loss limit']
+    ['diversity_loss_limit', 'diversity loss limit'],
+    ['max_inbreeding', 'max inbreeding'],
+    ['max_diversity_loss', 'max diversity loss'],
+    ['max_rare_useful_loss', 'max rare-useful loss'],
+    ['min_genetic_gain', 'min genetic gain'],
+    ['min_effective_parents', 'min effective parents'],
+    ['max_combined_risk', 'max combined risk']
   ];
   const out = [];
   for (const [key, label] of fields) {
