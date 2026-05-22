@@ -277,13 +277,6 @@ func main() {
 			return
 		}
 		setContentType(w, path)
-		// v0.7.9: tell browsers to revalidate every request. Static assets are
-		// embedded into the binary, so they change only on a redeploy — and
-		// when they do change, we MUST not serve a stale browser cache. The
-		// previous absence of cache headers made browsers heuristic-cache
-		// CSS/JS for minutes-to-hours, causing a fresh v0.7.x demo to render
-		// with the previous version's styles.
-		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 		_, _ = w.Write(data)
 	})
 	server := &http.Server{Addr: *listen, Handler: loggingMiddleware(mux), ReadHeaderTimeout: 5 * time.Second}
@@ -530,7 +523,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.9 fixes browser-cache staleness (Cache-Control: no-cache + cache-busting CSS link) and the actual demo-grid width overflow (grid-template-columns: 360px minmax(0, 1fr)). v0.7.8 histogram polish + tracked-strategy picker, v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + wheat fetcher + i18n landings, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.10 fixes demo-grid width by switching from CSS Grid to Flexbox (flex: 1 1 0% + min-width: 0 on .results is the standard shrinkable-fill pattern; earlier grid attempts still rendered wider than the top cards). Cache-control hacks from v0.7.9 reverted. v0.7.8 histogram polish + tracked-strategy picker, v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + wheat fetcher + i18n landings, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -570,7 +563,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.9 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.10 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

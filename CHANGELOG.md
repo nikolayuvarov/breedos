@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.10] - 2026-05-22
+
+### Fixed — demo-grid width (definitive)
+
+`.demo-grid` switched from CSS Grid (`grid-template-columns: 360px 1fr` / later `minmax(0, 1fr)`) to Flexbox:
+
+```css
+.demo-grid {
+  display: flex;
+  flex-direction: row;
+  gap: 18px;
+  align-items: flex-start;
+}
+.demo-grid > .sticky-panel { flex: 0 0 360px; }
+.demo-grid > .results { flex: 1 1 0%; min-width: 0; }
+```
+
+`flex: 1 1 0%` + `min-width: 0` is the classic shrinkable-fill pattern and constrains the flex container to its parent width without the track-sizing surprises Grid was producing. Verified on production v0.7.9 that the earlier `minmax(0, 1fr)` + `min-width: 0` on grid items was still rendering the demo-grid visibly wider than the top hero / title cards.
+
+The `@media (max-width: 980px)` rule was updated to use `flex-direction: column` for narrow viewports (sticky panel collapses to full-width stacked above results).
+
+### Reverted — Cache-control hacks from v0.7.9
+
+v0.7.9 introduced `Cache-Control: no-cache, must-revalidate` on the Go static handler and `?v=v0.7.9` query strings on every `<link rel="stylesheet">`. These were a misdiagnosis (the user works in dev mode with cache disabled; the width issue was the real CSS bug, not a stale cache). Removed both:
+
+- Static handler returns to default no-cache-header behaviour. If real cache headers are wanted later, that's a separate, deliberate decision with its own scope.
+- All five HTML files reference `/style.css` (no query string).
+
+### Changed
+- Version strings bumped `v0.7.9` → `v0.7.10` across `main.go`, all four landing footers, and the demo kicker.
+
 ## [0.7.9] - 2026-05-22
 
 ### Fixed — Demo-grid width (proper fix)
