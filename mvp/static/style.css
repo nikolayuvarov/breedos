@@ -487,3 +487,42 @@ select {
 }
 td span { color: var(--muted); font-size: 12px; }
 @media (max-width: 980px) { .decision-grid { grid-template-columns: 1fr; } }
+
+/* v0.7.6 live histogram */
+.histogram-card {
+  padding: 18px 22px 16px;
+}
+.histogram-card canvas {
+  width: 100%;
+  height: 160px;
+  display: block;
+  background: rgba(0,0,0,0.16);
+  border-radius: 14px;
+}
+.histogram-label {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 10px;
+  letter-spacing: -0.01em;
+}
+
+/* v0.7.6 language switcher in nav */
+.lang-switcher {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(255,255,255,0.12);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.lang-switcher a {
+  padding: 4px 6px;
+  border-radius: 6px;
+  color: var(--muted);
+}
+.lang-switcher a:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+.lang-switcher a.active { color: var(--accent); background: rgba(143,255,209,0.08); }

@@ -28,6 +28,8 @@ const labels = {
 
 let currentData = null;
 let previousData = null;
+// v0.7.6 live histogram: latest AFS snapshot received from /api/simulate/status.
+let lastSnapshot = null;
 
 function byId(id) { return document.getElementById(id); }
 
@@ -171,6 +173,9 @@ async function runSimulation() {
     setRunButtonProgress(0, 'Starting');
   }
   setStatus('Starting simulation job...', '');
+  // v0.7.6 live histogram: reset snapshot state for a fresh run.
+  lastSnapshot = null;
+  resetLiveHistogram();
   try {
     const startRes = await fetch('/api/simulate/start', {
       method: 'POST',
@@ -195,6 +200,10 @@ async function runSimulation() {
       const percent = Number.isFinite(Number(job.percent)) ? Number(job.percent) : 0;
       setRunButtonProgress(percent, job.done ? 'Finishing' : 'Running');
       setStatus(`${job.message || 'Running'} — ${Math.round(percent)}%`, '');
+      if (job.latest_snapshot) {
+        lastSnapshot = job.latest_snapshot;
+        drawLiveHistogram(lastSnapshot);
+      }
       if (job.done) break;
       await sleep(120);
     }
@@ -491,6 +500,82 @@ function drawParetoChart(canvasId, data) {
     ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
     ctx.fillText(labels[s.code] || s.code, xx + 8, yy - 4);
   }
+}
+
+// v0.7.6 live histogram: render the per-generation AFS bins as a bar chart.
+// `snap` is the latest_snapshot object from /api/simulate/status: it carries
+// {generation, total_generations, strategy_code, strategy_name, bins[10]}.
+function drawLiveHistogram(snap) {
+  const canvas = byId('chart_histogram');
+  if (!canvas) return;
+  const label = byId('histogramLabel');
+  if (!snap || !Array.isArray(snap.bins) || snap.bins.length === 0) return;
+  const total = Number(snap.total_generations) || 0;
+  const gen = Number(snap.generation) || 0;
+  const niceName = labels[snap.strategy_code] || snap.strategy_name || snap.strategy_code || 'strategy';
+  if (label) {
+    label.textContent = `Live allele-frequency spectrum — ${niceName}, generation ${gen} / ${total}`;
+  }
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  const margin = {left: 44, right: 16, top: 14, bottom: 30};
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+  const bins = snap.bins.map(v => Number(v) || 0);
+  const maxV = Math.max(1, ...bins);
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  ctx.fillRect(margin.left, margin.top, innerW, innerH);
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(237,248,245,0.72)';
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i <= 4; i++) {
+    const yy = margin.top + innerH * i / 4;
+    ctx.beginPath();
+    ctx.moveTo(margin.left, yy);
+    ctx.lineTo(margin.left + innerW, yy);
+    ctx.stroke();
+    const val = Math.round(maxV - (maxV * i / 4));
+    ctx.fillText(String(val), margin.left - 6, yy);
+  }
+  const barColor = colors[snap.strategy_code] || '#8fffd1';
+  const barW = innerW / bins.length;
+  for (let k = 0; k < bins.length; k++) {
+    const h = innerH * (bins[k] / maxV);
+    const x = margin.left + k * barW;
+    const y = margin.top + innerH - h;
+    ctx.fillStyle = barColor;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(x + 2, y, barW - 4, Math.max(1, h));
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = 'rgba(237,248,245,0.72)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let k = 0; k <= bins.length; k++) {
+    const tickX = margin.left + k * barW;
+    const labelVal = (k / bins.length).toFixed(1);
+    ctx.fillText(labelVal, tickX, margin.top + innerH + 6);
+  }
+  ctx.fillStyle = 'rgba(237,248,245,0.86)';
+  ctx.textAlign = 'left';
+  ctx.fillText('markers per allele-frequency bin', margin.left, 2);
+}
+
+// resetLiveHistogram clears the canvas and resets the label so consecutive runs
+// don't briefly show stale data. v0.7.6 live histogram.
+function resetLiveHistogram() {
+  const canvas = byId('chart_histogram');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  const label = byId('histogramLabel');
+  if (label) label.textContent = 'Waiting for first generation snapshot…';
 }
 
 function drawMetricChart(canvasId, legendId, data, prev, metric, title) {

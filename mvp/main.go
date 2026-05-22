@@ -181,28 +181,45 @@ type strategyConfig struct {
 
 type progressFunc func(percent int, message string)
 
+// v0.7.6 live histogram: per-generation allele-frequency spectrum snapshot.
+// Emitted from inside the simulation for ONE tracked strategy (one replicate)
+// so the async job handler can expose AFS progression while the run is live.
+// Bins are 10 fixed-width buckets over [0, 1]: bin[k] counts markers with
+// allele frequency in [k/10, (k+1)/10), with the last bin closed at 1.0.
+type AFSSnapshot struct {
+	Generation       int     `json:"generation"`
+	TotalGenerations int     `json:"total_generations"`
+	StrategyCode     string  `json:"strategy_code"`
+	StrategyName     string  `json:"strategy_name"`
+	Bins             [10]int `json:"bins"`
+}
+
+type snapshotFunc func(AFSSnapshot)
+
 type SimJobStartResponse struct {
 	JobID string `json:"job_id"`
 }
 
 type SimJobStatus struct {
-	JobID   string       `json:"job_id"`
-	Percent int          `json:"percent"`
-	Message string       `json:"message"`
-	Done    bool         `json:"done"`
-	Error   string       `json:"error,omitempty"`
-	Result  *SimResponse `json:"result,omitempty"`
+	JobID          string       `json:"job_id"`
+	Percent        int          `json:"percent"`
+	Message        string       `json:"message"`
+	Done           bool         `json:"done"`
+	Error          string       `json:"error,omitempty"`
+	Result         *SimResponse `json:"result,omitempty"`
+	LatestSnapshot *AFSSnapshot `json:"latest_snapshot,omitempty"`
 }
 
 type simJob struct {
-	ID        string
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Percent   int
-	Message   string
-	Done      bool
-	Error     string
-	Result    *SimResponse
+	ID             string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	Percent        int
+	Message        string
+	Done           bool
+	Error          string
+	Result         *SimResponse
+	LatestSnapshot *AFSSnapshot
 }
 
 var simJobStore = struct {
@@ -234,11 +251,17 @@ func main() {
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
-		if path == "" {
+		switch path {
+		case "":
 			path = "index.html"
-		}
-		if path == "demo" {
+		case "demo":
 			path = "demo.html"
+		case "ru":
+			path = "index-ru.html"
+		case "es":
+			path = "index-es.html"
+		case "uz":
+			path = "index-uz.html"
 		}
 		if strings.Contains(path, "..") {
 			http.Error(w, "bad path", http.StatusBadRequest)
@@ -304,7 +327,9 @@ func startSimulationJobHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id := createSimulationJob()
 	go func(jobID string, jobReq SimRequest) {
-		resp, err := runSimulationWithProgress(jobReq, func(percent int, message string) { updateSimulationJob(jobID, percent, message, nil, "", false) })
+		resp, err := runSimulationWithCallbacks(jobReq,
+			func(percent int, message string) { updateSimulationJob(jobID, percent, message, nil, "", false) },
+			func(snap AFSSnapshot) { updateSimulationJobSnapshot(jobID, snap) })
 		if err != nil {
 			updateSimulationJob(jobID, 100, "failed", nil, err.Error(), true)
 			return
@@ -379,7 +404,29 @@ func getSimulationJobStatus(id string) (SimJobStatus, bool) {
 	if job == nil {
 		return SimJobStatus{}, false
 	}
-	return SimJobStatus{JobID: job.ID, Percent: job.Percent, Message: job.Message, Done: job.Done, Error: job.Error, Result: job.Result}, true
+	var snapCopy *AFSSnapshot
+	if job.LatestSnapshot != nil {
+		s := *job.LatestSnapshot
+		snapCopy = &s
+	}
+	return SimJobStatus{JobID: job.ID, Percent: job.Percent, Message: job.Message, Done: job.Done, Error: job.Error, Result: job.Result, LatestSnapshot: snapCopy}, true
+}
+
+// updateSimulationJobSnapshot stores the latest per-generation AFS snapshot
+// for the tracked strategy. Called concurrently from the worker pool, so it
+// acquires the same mutex as updateSimulationJob. The pointer holds a copy
+// to avoid aliasing with the caller's stack-allocated snapshot.
+// v0.7.6 live histogram.
+func updateSimulationJobSnapshot(id string, snap AFSSnapshot) {
+	simJobStore.Lock()
+	defer simJobStore.Unlock()
+	job := simJobStore.Jobs[id]
+	if job == nil {
+		return
+	}
+	s := snap
+	job.LatestSnapshot = &s
+	job.UpdatedAt = time.Now()
 }
 
 func cleanupSimulationJobsLocked(now time.Time) {
@@ -398,9 +445,20 @@ func writeJSON(w http.ResponseWriter, v any) {
 	}
 }
 
-func runSimulation(req SimRequest) (SimResponse, error) { return runSimulationWithProgress(req, nil) }
+func runSimulation(req SimRequest) (SimResponse, error) {
+	return runSimulationWithCallbacks(req, nil, nil)
+}
 
 func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimResponse, error) {
+	return runSimulationWithCallbacks(req, progress, nil)
+}
+
+// runSimulationWithCallbacks is the v0.7.6 entry point that adds an optional
+// AFS snapshot callback alongside the existing progress callback. The snapshot
+// callback is invoked at most once per generation, from a worker goroutine,
+// for ONE chosen strategy (preferring "balanced") and ONE replicate (index 0).
+// Both callbacks may be nil. The sync /api/simulate path passes nil for both.
+func runSimulationWithCallbacks(req SimRequest, progress progressFunc, snapshot snapshotFunc) (SimResponse, error) {
 	reportProgress(progress, 1, "normalizing request")
 	normalizeRequest(&req)
 	strategies := buildStrategyConfigs(req)
@@ -434,7 +492,7 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 	rareUsefulAtStart := rareUsefulLoci(baseFreq, effects)
 	candidates := rankEditCandidates(baseFreq, effects, req.CrisprEdits)
 	reportProgress(progress, 5, "initial population, candidate edits, and strategy set ready")
-	results := simulateStrategiesDecisionEngine(req, strategies, initial, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, candidates, progress)
+	results := simulateStrategiesDecisionEngine(req, strategies, initial, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, candidates, progress, snapshot)
 	annotateDecisionScores(results)
 	annotateFeasibility(req, results, baseDiversity)
 	decision := buildDecisionSummary(req, results, baseDiversity)
@@ -461,7 +519,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.5 separates large founder-data CSVs from the binary: they live as external files alongside the binary and are uploaded conditionally by deploy_breedos.sh. v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
+		"BreedOS v0.7.6 adds a live allele-frequency-spectrum histogram (one tracked strategy, updated per generation during the run), a wheat fetcher (CerealsDB / T3), and Russian / Spanish / Uzbek landing pages. v0.7.5 external real-data deploy, v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -501,7 +559,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.5 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.6 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -549,7 +607,7 @@ type strategyTaskResult struct {
 	Result        StrategyResult
 }
 
-func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfig, initial []organism, effects []float64, baseFreq []float64, baseDiversity, baseMean float64, rareUsefulAtStart []int, candidates []EditCandidate, progress progressFunc) []StrategyResult {
+func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfig, initial []organism, effects []float64, baseFreq []float64, baseDiversity, baseMean float64, rareUsefulAtStart []int, candidates []EditCandidate, progress progressFunc, snapshot snapshotFunc) []StrategyResult {
 	strategyCount := len(strategies)
 	jobCount := strategyCount * req.Replicates
 	resultsByStrategy := make([][]StrategyResult, strategyCount)
@@ -559,6 +617,16 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 	}
 	workers := effectiveWorkerCount(req.WorkerCount, jobCount)
 	reportProgress(progress, 6, fmt.Sprintf("parallel decision engine: %d strategies × %d replicates, %d workers", strategyCount, req.Replicates, workers))
+	// v0.7.6 live histogram: track AFS snapshots from ONE strategy / one replicate
+	// to avoid concurrent writes from multiple workers. Prefer "balanced" since it
+	// is the BreedOS default; otherwise fall back to the first configured strategy.
+	trackIdx := 0
+	for i, cfg := range strategies {
+		if cfg.Code == "balanced" {
+			trackIdx = i
+			break
+		}
+	}
 	tasks := make(chan strategyTask)
 	out := make(chan strategyTaskResult, jobCount)
 	var completedSteps int64
@@ -577,10 +645,20 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 					applyCrisprSeed(strategyPop, editSet, req.CrisprIntroPercent, rand.New(rand.NewSource(req.Seed+int64(900000+task.StrategyIndex*1009+task.Replicate*97))))
 				}
 				strategyRNG := rand.New(rand.NewSource(req.Seed + int64(1000+task.StrategyIndex*31337+task.Replicate*7919)))
-				res := simulateStrategy(req, task.Config, strategyPop, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, strategyRNG, func(gen int) {
+				emitSnapshot := snapshot != nil && task.StrategyIndex == trackIdx && task.Replicate == 0
+				res := simulateStrategy(req, task.Config, strategyPop, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, strategyRNG, func(gen int, currentPop []organism) {
 					done := atomic.AddInt64(&completedSteps, 1)
 					percent := 6 + int(math.Round(float64(done)*91.0/float64(totalSteps)))
 					reportProgress(progress, percent, fmt.Sprintf("parallel run: %d/%d strategy-generations complete; %s replicate %d/%d generation %d/%d", done, totalSteps, task.Config.Name, task.Replicate+1, req.Replicates, gen, req.Generations))
+					if emitSnapshot {
+						snapshot(AFSSnapshot{
+							Generation:       gen,
+							TotalGenerations: req.Generations,
+							StrategyCode:     task.Config.Code,
+							StrategyName:     task.Config.Name,
+							Bins:             afsBinsFromPop(currentPop, req.Markers),
+						})
+					}
 				})
 				out <- strategyTaskResult{StrategyIndex: task.StrategyIndex, Replicate: task.Replicate, Config: task.Config, Result: res}
 			}
@@ -1366,7 +1444,7 @@ func clonePopulation(pop []organism) []organism {
 	return out
 }
 
-func simulateStrategy(req SimRequest, cfg strategyConfig, pop []organism, effects []float64, baseFreq []float64, baseDiversity, baseMean float64, rareUsefulAtStart []int, rng *rand.Rand, progress func(gen int)) StrategyResult {
+func simulateStrategy(req SimRequest, cfg strategyConfig, pop []organism, effects []float64, baseFreq []float64, baseDiversity, baseMean float64, rareUsefulAtStart []int, rng *rand.Rand, progress func(gen int, pop []organism)) StrategyResult {
 	metrics := make([]MetricPoint, 0, req.Generations+1)
 	metrics = append(metrics, computeMetrics(0, pop, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, 0))
 	for gen := 1; gen <= req.Generations; gen++ {
@@ -1374,7 +1452,7 @@ func simulateStrategy(req SimRequest, cfg strategyConfig, pop []organism, effect
 		pop = makeNextGeneration(pop, parents, req.Markers, req.MutationRate, rng, cfg.MatingRule)
 		metrics = append(metrics, computeMetrics(gen, pop, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, len(parents)))
 		if progress != nil {
-			progress(gen)
+			progress(gen, pop)
 		}
 	}
 	finalMetric := metrics[len(metrics)-1]
@@ -1663,6 +1741,28 @@ func alleleFreq(pop []organism, markers int) []float64 {
 		freq[m] /= denom
 	}
 	return freq
+}
+
+// afsBinsFromPop builds the 10-bin allele-frequency spectrum for live
+// visualisation. bins[k] counts markers with frequency in [k/10, (k+1)/10);
+// the last bin is closed at 1.0. v0.7.6 live histogram.
+func afsBinsFromPop(pop []organism, markers int) [10]int {
+	var bins [10]int
+	if markers <= 0 || len(pop) == 0 {
+		return bins
+	}
+	freq := alleleFreq(pop, markers)
+	for _, p := range freq {
+		idx := int(p * 10)
+		if idx < 0 {
+			idx = 0
+		}
+		if idx > 9 {
+			idx = 9
+		}
+		bins[idx]++
+	}
+	return bins
 }
 func diversityFromFreq(freq []float64) float64 {
 	var s float64

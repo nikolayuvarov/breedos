@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS — motor de decisiones para estrategias de selección en mejora con CRISPR</title>
+  <meta name="description" content="BreedOS es un motor de decisiones para selección artificial y mejora con CRISPR. Compara estrategias de selección de varias generaciones sobre la predicción genómica.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/es">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="#problem">Problema</a>
+      <a href="#solution">Solución</a>
+      <a href="#crispr">Capa CRISPR</a>
+      <a href="/demo">Demo</a>
+      <span class="lang-switcher" aria-label="Idioma">
+        <a href="/">EN</a> ·
+        <a href="/ru">RU</a> ·
+        <a class="active" href="/es">ES</a> ·
+        <a href="/uz">UZ</a>
+      </span>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="kicker">Motor de decisiones para estrategias de selección en mejora con CRISPR</div>
+          <h1>El sistema de control para la mejora genética.</h1>
+          <p class="lede">
+            BreedOS ayuda a los criadores y bioingenieros a elegir qué cruzar, qué editar y qué conservar — sin perder la diversidad genética a largo plazo.
+          </p>
+          <div class="actions">
+            <a class="btn primary" href="/demo">Probar el demo MVP</a>
+            <a class="btn" href="https://github.com/NikolayUvarov/breedos">Ver en GitHub</a>
+          </div>
+          <div class="badge-row">
+            <span class="badge">selección genómica</span>
+            <span class="badge">simulación evolutiva</span>
+            <span class="badge">deriva / endogamia</span>
+            <span class="badge">mejora con CRISPR</span>
+            <span class="badge">planificación de varias generaciones</span>
+          </div>
+        </div>
+        <div class="card visual" aria-label="Diagrama del producto BreedOS">
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="node n1"></div>
+          <div class="node n2"></div>
+          <div class="node n3"></div>
+          <div class="node n4"></div>
+          <div class="center-badge">
+            <div>
+              <strong>BreedOS</strong>
+              <small>estrategia de selección para futuras generaciones</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem" class="section wrap">
+      <div class="grid2">
+        <div>
+          <h2>La mejora genética tiene muchos datos, pero las decisiones siguen siendo difíciles.</h2>
+          <p>
+            Los equipos de mejora hoy generan muchos datos: genómicos, fenotipos, pruebas de campo, pedigrí, medidas del ambiente y, cada vez más, datos de edición de genes. Pero la decisión clave sigue siendo difícil: ¿qué cruzamos, qué editamos, qué guardamos y qué pasará en las próximas 10 o 20 generaciones?
+          </p>
+        </div>
+        <div class="card">
+          <div class="quote">
+            La mejora no es solo un problema de predicción. En el fondo, es un problema de control de muchas generaciones sobre una población que evoluciona.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="solution" class="section wrap">
+      <h2>BreedOS es la capa de decisión.</h2>
+      <div class="grid3">
+        <div class="card mini">
+          <h3>Gemelo digital de selección</h3>
+          <p>Simula la ganancia genética, la deriva de las frecuencias alélicas, la pérdida de diversidad, la endogamia, los cuellos de botella y las opciones futuras de selección.</p>
+        </div>
+        <div class="card mini">
+          <h3>Planificador de selección genómica <small>(roadmap)</small></h3>
+          <p>Va a ordenar candidatos a padres, comparar cruces y elegir estrategias de selección con restricciones a largo plazo. La integración de producción está planificada en el programa.</p>
+        </div>
+        <div class="card mini">
+          <h3>Capa de estrategia CRISPR</h3>
+          <p>Prioriza las ediciones candidatas y prueba si una edición, un cruce o una mezcla de los dos genera la mejor trayectoria de población.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="crispr" class="section wrap">
+      <div class="card">
+        <h2>CRISPR le da a la mejora una función de «escritura» limitada pero potente. BreedOS decide qué escribir.</h2>
+        <p>
+          BreedOS no diseña ARN guía, no calcula efectos fuera del objetivo y no da protocolos de laboratorio — eso lo cubren Benchling, Synthego, CRISPResso y herramientas similares. BreedOS muestra la capa de producto encima: la planificación de selección con conciencia de edición. Las ediciones candidatas se ordenan por valor esperado del rasgo, frecuencia actual del alelo y lógica de riesgo poblacional. Las ediciones elegidas se pueden sembrar en una población simulada y luego propagar con una selección balanceada.
+        </p>
+        <div class="flow" style="margin-top:18px">
+          <div class="card mini"><strong>Leer</strong><p>Genotipos, fenotipos, pedigrí, ambiente, variantes candidatas.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Decidir</strong><p>Cruzar, editar, conservar, rechazar o guardar como reserva de diversidad.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Dirigir</strong><p>Simular la trayectoria de la población antes de gastar recursos.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pitch" class="section wrap">
+      <div class="grid2">
+        <div class="card">
+          <h2>Idea en una frase</h2>
+          <p class="lede">
+            BreedOS es el motor de decisiones para selección artificial. Ayuda a los equipos de mejora a optimizar la ganancia genética a lo largo de muchas generaciones, sin perder la diversidad que hace posible la mejora futura.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Por qué ahora</h2>
+          <ul class="clean">
+            <li>La secuenciación hizo legibles las poblaciones biológicas.</li>
+            <li>CRISPR y la mejora de precisión hicieron escribible la biología.</li>
+            <li>La IA y el cómputo barato hacen posibles los sistemas de decisión biológica de muchas generaciones.</li>
+            <li>El cuello de botella ya no es generar datos; ahora es la inteligencia de decisión.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap">
+      <div class="card">
+        <h2>Mercado inicial</h2>
+        <p>
+          Equipos de mejora en cultivos y biotecnología agrícola que trabajan en rasgos resistentes al clima: tolerancia a sequía, tolerancia al calor, resistencia a enfermedades, tolerancia a salinidad, estabilidad de rendimiento y uso eficiente de recursos.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="/demo">Probar el simulador de selección</a>
+          <a class="btn" href="https://github.com/NikolayUvarov/breedos">Ver en GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.7.6 — simulador de capa de decisión, no es un protocolo de laboratorio. <a href="https://github.com/NikolayUvarov/breedos">Código fuente en GitHub</a>.</div>
+  </footer>
+</body>
+</html>

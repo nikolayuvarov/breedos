@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS — движок принятия решений по стратегиям отбора в селекции с CRISPR</title>
+  <meta name="description" content="BreedOS — движок принятия решений для искусственного отбора и селекции с CRISPR-редактированием. Сравнивает стратегии отбора на горизонте многих поколений поверх геномного предсказания.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/ru">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="#problem">Проблема</a>
+      <a href="#solution">Решение</a>
+      <a href="#crispr">Слой CRISPR</a>
+      <a href="/demo">Демо</a>
+      <span class="lang-switcher" aria-label="Язык">
+        <a href="/">EN</a> ·
+        <a class="active" href="/ru">RU</a> ·
+        <a href="/es">ES</a> ·
+        <a href="/uz">UZ</a>
+      </span>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero wrap">
+      <div class="hero-grid">
+        <div>
+          <div class="kicker">Движок принятия решений по стратегиям отбора в селекции с CRISPR</div>
+          <h1>Система управления для селекции.</h1>
+          <p class="lede">
+            BreedOS помогает селекционерам и биоинженерам выбирать, что скрещивать, что редактировать и что сохранять — без потери долгосрочного генетического разнообразия.
+          </p>
+          <div class="actions">
+            <a class="btn primary" href="/demo">Запустить MVP-демо</a>
+            <a class="btn" href="https://github.com/NikolayUvarov/breedos">Открыть на GitHub</a>
+          </div>
+          <div class="badge-row">
+            <span class="badge">геномная селекция</span>
+            <span class="badge">эволюционная симуляция</span>
+            <span class="badge">дрейф / инбридинг</span>
+            <span class="badge">селекция с CRISPR</span>
+            <span class="badge">планирование на много поколений</span>
+          </div>
+        </div>
+        <div class="card visual" aria-label="Схема продукта BreedOS">
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="orbit"></div>
+          <div class="node n1"></div>
+          <div class="node n2"></div>
+          <div class="node n3"></div>
+          <div class="node n4"></div>
+          <div class="center-badge">
+            <div>
+              <strong>BreedOS</strong>
+              <small>стратегия отбора на будущие поколения</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="problem" class="section wrap">
+      <div class="grid2">
+        <div>
+          <h2>В селекции стало много данных, но решения принимать всё так же трудно.</h2>
+          <p>
+            Селекционные команды генерируют геномные данные, фенотипы, полевые испытания, родословные, данные о среде и всё чаще — данные о генном редактировании. Но ключевое решение по-прежнему сложно: что скрестить, что отредактировать, что сохранить, и что произойдёт через 10 или 20 поколений?
+          </p>
+        </div>
+        <div class="card">
+          <div class="quote">
+            Селекция — это не только задача предсказания. На более глубоком уровне это задача управления эволюционирующей популяцией на горизонте многих поколений.
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="solution" class="section wrap">
+      <h2>BreedOS — это слой принятия решений.</h2>
+      <div class="grid3">
+        <div class="card mini">
+          <h3>Цифровой двойник отбора</h3>
+          <p>Симулирует генетический прирост, дрейф аллельных частот, потерю разнообразия, инбридинг, узкие места и оптимальность будущих решений по отбору.</p>
+        </div>
+        <div class="card mini">
+          <h3>Планировщик геномной селекции <small>(roadmap)</small></h3>
+          <p>Будет ранжировать кандидатов в родители, сравнивать скрещивания и подбирать стратегии отбора с учётом долгосрочных ограничений. Производственная интеграция — в плане программы.</p>
+        </div>
+        <div class="card mini">
+          <h3>Слой стратегии CRISPR</h3>
+          <p>Расставляет приоритеты кандидатов на редактирование и проверяет, какая комбинация — правка, скрещивание или их сочетание — даёт лучшую траекторию популяции.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="crispr" class="section wrap">
+      <div class="card">
+        <h2>CRISPR — это ограниченная, но мощная функция «записи» в геном. BreedOS решает, что именно писать.</h2>
+        <p>
+          BreedOS не проектирует guide-РНК, не считает off-target-эффекты, не даёт лабораторных протоколов — это покрывают Benchling, Synthego, CRISPResso и смежные инструменты. BreedOS показывает продуктовый слой над ними: планирование отбора с учётом редактирований. Кандидаты на правку ранжируются по ожидаемому эффекту на признак, текущей частоте аллеля и логике популяционных рисков; выбранные правки можно засеять в симулированную популяцию и распространить через сбалансированный отбор.
+        </p>
+        <div class="flow" style="margin-top:18px">
+          <div class="card mini"><strong>Чтение</strong><p>Генотипы, фенотипы, родословные, среда, варианты-кандидаты.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Решение</strong><p>Скрестить, отредактировать, сохранить, отклонить или удержать как резерв разнообразия.</p></div>
+          <div class="arrow">→</div>
+          <div class="card mini"><strong>Управление</strong><p>Симулировать траекторию популяции до того, как тратить ресурсы.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="pitch" class="section wrap">
+      <div class="grid2">
+        <div class="card">
+          <h2>Питч в одну строку</h2>
+          <p class="lede">
+            BreedOS — движок принятия решений для искусственного отбора. Помогает селекционным командам оптимизировать генетический прирост на горизонте поколений, не теряя разнообразие, без которого невозможны дальнейшие улучшения.
+          </p>
+        </div>
+        <div class="card">
+          <h2>Почему сейчас</h2>
+          <ul class="clean">
+            <li>Секвенирование сделало биологические популяции читаемыми.</li>
+            <li>CRISPR и precision breeding сделали биологию записываемой.</li>
+            <li>ИИ и дешёвые вычисления делают возможными многопоколенные системы принятия биологических решений.</li>
+            <li>Узкое место сместилось с генерации данных на интеллект принятия решений.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section wrap">
+      <div class="card">
+        <h2>Стартовый плацдарм</h2>
+        <p>
+          Селекционные команды в растениеводстве и аграрной биотехнологии, работающие над климато-устойчивыми признаками: засухоустойчивость, жароустойчивость, устойчивость к болезням, устойчивость к засолению, стабильность урожая, эффективность использования ресурсов.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href="/demo">Запустить симулятор отбора</a>
+          <a class="btn" href="https://github.com/NikolayUvarov/breedos">Открыть на GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.7.6 — симулятор слоя принятия решений, не лабораторный протокол. <a href="https://github.com/NikolayUvarov/breedos">Исходный код на GitHub</a>.</div>
+  </footer>
+</body>
+</html>

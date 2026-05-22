@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6] - 2026-05-22
+
+### Added — Live allele-frequency-spectrum (AFS) histogram
+
+While a simulation runs, the demo now shows a small live histogram below the Pareto chart that updates per generation. It bucketed the current allele frequencies of ONE tracked strategy (preferring `balanced`; otherwise the first strategy in the run) into 10 bins of width 0.1 and displays them as a bar chart. The final snapshot stays visible after the run completes.
+
+Backend additions (`mvp/main.go`):
+- `AFSSnapshot` struct with `generation`, `total_generations`, `strategy_code`, `strategy_name`, and `[10]int` bins.
+- `snapshotFunc` callback type threaded through `runSimulationWithCallbacks` (new entry point; `runSimulation` and `runSimulationWithProgress` are preserved as thin wrappers so all existing tests pass).
+- `simJob.LatestSnapshot` + `SimJobStatus.latest_snapshot` (JSON, `omitempty` for nullable client-side).
+- `afsBinsFromPop` helper next to `alleleFreq`.
+
+The decision engine picks ONE tracked strategy and only its replicate 0 emits snapshots — this avoids concurrent writes from parallel workers entirely. Snapshot writes still go through the existing `simJobStore.Mutex` for defense-in-depth. Verified with `go test -race ./...` (clean).
+
+Frontend (`app.js`):
+- `lastSnapshot` state, `drawLiveHistogram(snap)`, `resetLiveHistogram()`.
+- The existing 120 ms `/api/simulate/status` polling loop now consumes `job.latest_snapshot` and redraws the canvas on each poll. No new polling cadence.
+- Bar colour reuses the strategy's color from the existing `colors` map.
+
+UI:
+- New `.histogram-card` between the Pareto chart and CRISPR card (`demo.html`).
+- Heading "Live allele-frequency spectrum — &lt;strategy&gt; generation N/M", ~800 × 160 canvas, explanatory note.
+- `.histogram-card` and `.histogram-label` styles in `style.css`.
+
+### Added — Wheat data fetcher (`tools/data/fetch_wheat_t3.py`)
+
+Standalone Python 3 script (no external dependencies) that downloads a public wheat genotype subset and writes a BreedOS founder-CSV. Output dataset name: `wheat_t3`.
+
+Default source: **CerealsDB 35K Wheat Breeders' Array** (University of Bristol — fully public, no auth required). Auto-detects ZIP / CSV / TSV / VCF (gzip-aware). Defaults to `--n 500 --m 5000 --maf 0.05`; output ~5 MB.
+
+Supports `--source <url>` override so the operator can point it at a manually-downloaded T3/Wheat VCF (T3 requires a free account for the genotype-download endpoint) or the Watkins 12.7× WGS VCF (Cheng et al. 2024).
+
+Hexaploidy is handled by treating per-locus diploid calls (AA / AB / BB from arrays, or 0/0 / 0/1 / 1/1 from VCF callers) as 0/1/2 dosage — documented in the script header and in the output CSV `# Ploidy note:` block.
+
+Demo dropdown extended with `Wheat (T3 / CerealsDB)` option. As with Arabidopsis, the operator runs the fetcher locally, then `deploy_breedos.sh` uploads the resulting CSV to the server alongside the binary (size-skip).
+
+### Added — Marketing localization (Russian, Spanish B1, Uzbek)
+
+Three new landing pages alongside English:
+
+- `/ru` → `index-ru.html` — Russian (native register, professional but not academic).
+- `/es` → `index-es.html` — Spanish at **CEFR B1** level: simple tenses (presente, pretérito, pretérito perfecto, futuro simple), short sentences (≤ 20 words), common vocabulary, no subjunctive where avoidable.
+- `/uz` → `index-uz.html` — Uzbek (Latin script, standard since 2018). Recommend founder review for terminology choices (`naslchilik` vs `seleksiya`, `belgi` vs `xususiyat`, etc.).
+
+The demo and the Decision Report stay English (technical content; one source of truth). The nav on every page (landing + demo) has a four-way language switcher (`EN · RU · ES · UZ`) with `.active` styling on the current language.
+
+Go routes added in `main.go`: `/ru`, `/es`, `/uz` serve the respective HTML; everything else routes unchanged.
+
+CSS: new `.lang-switcher` block in `style.css` (subtle separator, hover, active highlight in accent colour).
+
+### Changed
+- Version strings bumped `v0.7.5` → `v0.7.6` in `main.go` run notes, all four landing footers (`index.html`, `index-ru.html`, `index-es.html`, `index-uz.html`), and the demo kicker.
+- `runSimulation` and `runSimulationWithProgress` are now thin wrappers around the new `runSimulationWithCallbacks` (which also accepts a `snapshotFunc`). API and existing test signatures unchanged.
+
+### Followup ideas (deferred)
+- A select control above the live histogram letting the user pick which strategy to track. Today the choice is fixed at run-start (prefer `balanced`).
+- Detect language preference via `Accept-Language` or cookie and redirect `/` accordingly; today users land on English and switch manually.
+- Founder review of the Uzbek translation for terminology choices.
+
 ## [0.7.5] - 2026-05-22
 
 ### Changed — External real-data CSVs (not embedded in binary)
