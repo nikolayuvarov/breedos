@@ -567,7 +567,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.13 fixes the live histogram drop-frame problem: the simJob now retains a snapshot history (not just the latest); the status endpoint returns frames newer than ?since=N and the snapshot_seq cursor. The frontend collects all per-generation snapshots into a queue and plays them on an independent UI timer (~90ms/frame), so the chart animates even when the backend finishes all generations in 300ms. v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.14 enqueues the tracked (histogram) task FIRST in the worker pool so per-generation snapshots start arriving on poll #1 — before v0.7.14 the tracked task could sit unstarted for ~10s on slow servers while other strategies ran. Also embeds a favicon. v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -607,7 +607,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.13 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.14 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -738,8 +738,20 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 		}()
 	}
 	go func() {
+		// v0.7.14: enqueue the tracked (strategy=trackIdx, replicate=0) task
+		// FIRST so a worker picks it up immediately and snapshots start
+		// flowing on poll #1. Without this, the tracked task is at queue
+		// position (trackIdx * req.Replicates) and can sit unstarted for
+		// 10+ seconds while the other strategies run — leaving the live
+		// histogram stuck on the gen-0 snapshot until then.
+		if trackIdx >= 0 && trackIdx < len(strategies) {
+			tasks <- strategyTask{StrategyIndex: trackIdx, Replicate: 0, Config: strategies[trackIdx]}
+		}
 		for i, cfg := range strategies {
 			for rep := 0; rep < req.Replicates; rep++ {
+				if i == trackIdx && rep == 0 {
+					continue
+				}
 				tasks <- strategyTask{StrategyIndex: i, Replicate: rep, Config: cfg}
 			}
 		}
@@ -1997,6 +2009,10 @@ func setContentType(w http.ResponseWriter, path string) {
 	}
 	if strings.HasSuffix(path, ".js") {
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		return
+	}
+	if strings.HasSuffix(path, ".ico") {
+		w.Header().Set("Content-Type", "image/x-icon")
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
