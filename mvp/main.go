@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -208,13 +209,20 @@ type SimJobStartResponse struct {
 }
 
 type SimJobStatus struct {
-	JobID          string       `json:"job_id"`
-	Percent        int          `json:"percent"`
-	Message        string       `json:"message"`
-	Done           bool         `json:"done"`
-	Error          string       `json:"error,omitempty"`
-	Result         *SimResponse `json:"result,omitempty"`
-	LatestSnapshot *AFSSnapshot `json:"latest_snapshot,omitempty"`
+	JobID          string        `json:"job_id"`
+	Percent        int           `json:"percent"`
+	Message        string        `json:"message"`
+	Done           bool          `json:"done"`
+	Error          string        `json:"error,omitempty"`
+	Result         *SimResponse  `json:"result,omitempty"`
+	LatestSnapshot *AFSSnapshot  `json:"latest_snapshot,omitempty"`
+	// v0.7.13: snapshot queue. The status endpoint accepts ?since=<n> and
+	// returns Snapshots[since:] plus SnapshotSeq = len(internal store). The
+	// client polls fast (cheap), accumulates snapshots, and plays them back
+	// on an independent UI timer so the chart is not capped by network rate
+	// and stays smooth even after the simulation finishes.
+	Snapshots   []AFSSnapshot `json:"snapshots,omitempty"`
+	SnapshotSeq int           `json:"snapshot_seq"`
 }
 
 type simJob struct {
@@ -227,6 +235,7 @@ type simJob struct {
 	Error          string
 	Result         *SimResponse
 	LatestSnapshot *AFSSnapshot
+	Snapshots      []AFSSnapshot // v0.7.13: full history of emitted snapshots for ?since= replay.
 }
 
 var simJobStore = struct {
@@ -354,12 +363,19 @@ func simulationJobStatusHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "use GET", http.StatusMethodNotAllowed)
 		return
 	}
-	id := r.URL.Query().Get("id")
+	q := r.URL.Query()
+	id := q.Get("id")
 	if id == "" {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	status, ok := getSimulationJobStatus(id)
+	since := 0
+	if s := q.Get("since"); s != "" {
+		if n, err := strconv.Atoi(s); err == nil && n >= 0 {
+			since = n
+		}
+	}
+	status, ok := getSimulationJobStatus(id, since)
 	if !ok {
 		http.Error(w, "job not found", http.StatusNotFound)
 		return
@@ -405,7 +421,7 @@ func updateSimulationJob(id string, percent int, message string, result *SimResp
 	job.UpdatedAt = now
 }
 
-func getSimulationJobStatus(id string) (SimJobStatus, bool) {
+func getSimulationJobStatus(id string, since int) (SimJobStatus, bool) {
 	now := time.Now()
 	simJobStore.Lock()
 	defer simJobStore.Unlock()
@@ -419,7 +435,25 @@ func getSimulationJobStatus(id string) (SimJobStatus, bool) {
 		s := *job.LatestSnapshot
 		snapCopy = &s
 	}
-	return SimJobStatus{JobID: job.ID, Percent: job.Percent, Message: job.Message, Done: job.Done, Error: job.Error, Result: job.Result, LatestSnapshot: snapCopy}, true
+	// v0.7.13: return only snapshots emitted after the client's `since` index.
+	// Total count is always exposed as SnapshotSeq so the client can advance.
+	totalSeq := len(job.Snapshots)
+	var newSnaps []AFSSnapshot
+	if since < totalSeq {
+		newSnaps = make([]AFSSnapshot, totalSeq-since)
+		copy(newSnaps, job.Snapshots[since:])
+	}
+	return SimJobStatus{
+		JobID:          job.ID,
+		Percent:        job.Percent,
+		Message:        job.Message,
+		Done:           job.Done,
+		Error:          job.Error,
+		Result:         job.Result,
+		LatestSnapshot: snapCopy,
+		Snapshots:      newSnaps,
+		SnapshotSeq:    totalSeq,
+	}, true
 }
 
 // updateSimulationJobSnapshot stores the latest per-generation AFS snapshot
@@ -436,6 +470,10 @@ func updateSimulationJobSnapshot(id string, snap AFSSnapshot) {
 	}
 	s := snap
 	job.LatestSnapshot = &s
+	// v0.7.13: append to history so /api/simulate/status?since= can replay
+	// missed frames. Maximum generations is 200 (UI cap), so the slice stays
+	// small.
+	job.Snapshots = append(job.Snapshots, s)
 	job.UpdatedAt = time.Now()
 }
 
@@ -529,7 +567,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.12 introduces a public-wheat datasets registry at /datasets backed by mvp/datasets-manifest.json (curated Figshare durum, Dryad panels, INRAE 1000 exomes, Zenodo lifted v2.1, Watkins WGS). deploy_breedos.sh uploads small archives fully and large ones head-truncated to 100 MB; BREEDOS_DEPLOY_FULL_LARGE=1 overrides. v0.7.11 demo-shell width fix, v0.7.10 Flexbox layout, v0.7.8 histogram polish + tracked-strategy picker, v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + i18n landings, and v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.13 fixes the live histogram drop-frame problem: the simJob now retains a snapshot history (not just the latest); the status endpoint returns frames newer than ?since=N and the snapshot_seq cursor. The frontend collects all per-generation snapshots into a queue and plays them on an independent UI timer (~90ms/frame), so the chart animates even when the backend finishes all generations in 300ms. v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -569,7 +607,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.12 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.13 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

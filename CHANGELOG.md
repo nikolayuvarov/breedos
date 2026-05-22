@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.13] - 2026-05-22
+
+### Fixed — Live histogram drops frames (snapshot queue + client playback)
+
+Diagnosis: the simJob stored only one `LatestSnapshot`. The browser polled every 80 ms but the simulation often emitted all 15-30 per-generation snapshots in well under 80 ms, so most snapshots were overwritten before they were ever sent. The chart visibly jumped from generation 0 to whatever the latest single snapshot happened to be — not an animation.
+
+Fix:
+
+- **Backend.** `simJob` now keeps `Snapshots []AFSSnapshot` (the full history) plus a derived `SnapshotSeq = len(Snapshots)`. `updateSimulationJobSnapshot` appends to the slice instead of overwriting a single field. The `/api/simulate/status` handler accepts `?since=<N>` and returns `Snapshots[since:]` plus the new `snapshot_seq`. The legacy `latest_snapshot` field is still emitted for backwards compatibility.
+
+- **Frontend.** The poll loop is the producer: it asks for `?since=snapshotSeq` and appends the returned `snapshots[]` to a client-side queue `pendingFrames[]`. An independent `setTimeout` chain (`playNextHistogramFrame`) is the consumer: it dequeues one frame and draws it every `PLAYBACK_FRAME_MS` (90 ms). The playback continues running after the poll loop exits, draining the queue. A backend that finishes 20 generations in 300 ms now plays back as a ~1.8 s animation in the UI — visibly live.
+
+- **Smoke verification.** A 15-generation run produces `snapshot_seq=16` (generations 0-15 inclusive) and `?since=10` returns only the trailing 6 frames. Confirmed locally.
+
+### Not changed
+- Concurrency model: still one tracked strategy + replicate 0 only; `simJobStore.Mutex` guards the slice write/read.
+- `latest_snapshot` is still emitted (omitempty) so older clients keep working.
+- SSE / true streaming endpoint deferred — the polling+queue approach is a small diff with no new transport layer.
+
+### Changed
+- Version strings bumped `v0.7.12` → `v0.7.13` across `main.go`, all four landing footers, the demo kicker, and the datasets-page kicker.
+
 ## [0.7.12] - 2026-05-22
 
 ### Added — Public-wheat datasets registry

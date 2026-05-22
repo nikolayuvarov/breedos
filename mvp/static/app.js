@@ -30,8 +30,18 @@ let currentData = null;
 let previousData = null;
 // v0.7.6 live histogram: latest AFS snapshot received from /api/simulate/status.
 // v0.7.8 — also cache the last-drawn generation key to skip redundant redraws.
+// v0.7.13 — keep a client-side queue of snapshots and play them back at a fixed
+// UI tempo so the chart looks like an animation even when the backend finishes
+// all generations in a few hundred milliseconds. The poll loop is the
+// producer (cheap network ops); a separate setTimeout chain is the consumer.
 let lastSnapshot = null;
 let lastDrawnGeneration = -1;
+let snapshotSeq = 0;            // next snapshot index to fetch
+let pendingFrames = [];         // FIFO queue of snapshots to render
+let playbackTimer = null;       // setTimeout handle for the next frame
+const PLAYBACK_FRAME_MS = 90;   // ~11 fps; fast enough to feel live, slow
+                                // enough that an 8-generation backend run
+                                // takes ~720ms in the UI.
 
 function byId(id) { return document.getElementById(id); }
 
@@ -177,8 +187,15 @@ async function runSimulation() {
   }
   setStatus('Starting simulation job...', '');
   // v0.7.6 live histogram: reset snapshot state for a fresh run.
+  // v0.7.13: also reset the playback queue + seq cursor.
   lastSnapshot = null;
   lastDrawnGeneration = -1;
+  snapshotSeq = 0;
+  pendingFrames = [];
+  if (playbackTimer) {
+    clearTimeout(playbackTimer);
+    playbackTimer = null;
+  }
   resetLiveHistogram();
   try {
     const startRes = await fetch('/api/simulate/start', {
@@ -195,7 +212,15 @@ async function runSimulation() {
 
     let job = null;
     for (;;) {
-      const statusRes = await fetch('/api/simulate/status?id=' + encodeURIComponent(start.job_id), {cache: 'no-store'});
+      // v0.7.13: pass ?since=snapshotSeq so the server returns only new frames
+      // we haven't seen yet. The full history is on the server; we accumulate
+      // missed frames into a queue that the playback timer consumes at a
+      // fixed UI tempo (PLAYBACK_FRAME_MS), so a fast backend looks animated
+      // rather than jumping to the final state.
+      const statusURL = '/api/simulate/status?id='
+        + encodeURIComponent(start.job_id)
+        + '&since=' + snapshotSeq;
+      const statusRes = await fetch(statusURL, {cache: 'no-store'});
       if (!statusRes.ok) {
         const text = await statusRes.text();
         throw new Error(text || `HTTP ${statusRes.status}`);
@@ -204,20 +229,14 @@ async function runSimulation() {
       const percent = Number.isFinite(Number(job.percent)) ? Number(job.percent) : 0;
       setRunButtonProgress(percent, job.done ? 'Finishing' : 'Running');
       setStatus(`${job.message || 'Running'} — ${Math.round(percent)}%`, '');
-      if (job.latest_snapshot) {
-        const incomingGen = Number(job.latest_snapshot.generation);
-        // v0.7.8: only redraw when the generation actually advances; cheap
-        // dedup against repeated polls reading the same final snapshot
-        // (which previously caused visible re-render jitter near run end).
-        if (incomingGen !== lastDrawnGeneration) {
-          lastSnapshot = job.latest_snapshot;
-          lastDrawnGeneration = incomingGen;
-          drawLiveHistogram(lastSnapshot);
-        }
+      if (Array.isArray(job.snapshots) && job.snapshots.length > 0) {
+        for (const s of job.snapshots) pendingFrames.push(s);
+        startHistogramPlayback();
+      }
+      if (Number.isFinite(Number(job.snapshot_seq))) {
+        snapshotSeq = Number(job.snapshot_seq);
       }
       if (job.done) break;
-      // v0.7.8: tightened polling from 120ms to 80ms for snappier histogram
-      // updates without meaningful extra server load.
       await sleep(80);
     }
 
@@ -582,6 +601,30 @@ function drawLiveHistogram(snap) {
   ctx.fillStyle = 'rgba(237,248,245,0.86)';
   ctx.textAlign = 'left';
   ctx.fillText('markers per allele-frequency bin', margin.left, 2);
+}
+
+// v0.7.13 — playback timer that pulls one snapshot at a time from
+// pendingFrames and draws it. Independent of the polling loop, so it
+// continues drawing the queued tail after the simulation completes.
+function startHistogramPlayback() {
+  if (playbackTimer) return; // already running
+  playNextHistogramFrame();
+}
+function playNextHistogramFrame() {
+  playbackTimer = null;
+  if (pendingFrames.length === 0) return;
+  const snap = pendingFrames.shift();
+  if (snap) {
+    const incomingGen = Number(snap.generation);
+    if (incomingGen !== lastDrawnGeneration) {
+      lastSnapshot = snap;
+      lastDrawnGeneration = incomingGen;
+      drawLiveHistogram(snap);
+    }
+  }
+  if (pendingFrames.length > 0) {
+    playbackTimer = setTimeout(playNextHistogramFrame, PLAYBACK_FRAME_MS);
+  }
 }
 
 // resetLiveHistogram clears the canvas and resets the label so consecutive runs
