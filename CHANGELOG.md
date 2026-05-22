@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.7] - 2026-05-22
+
+### Fixed — Misleading language switcher on demo
+
+The language switcher previously appeared in the demo nav too, but clicking RU/ES/UZ on demo threw the user to the localized landing — not to a translated demo (the demo is intentionally English-only, one source of truth for the technical surface). The user reasonably read this as a broken promise.
+
+Fixes:
+- Language switcher removed from `demo.html` nav. The demo now shows only the "Landing" link back to /. Users who want to switch language do so from the landing page.
+- Each localized landing (`index-ru.html`, `index-es.html`, `index-uz.html`) gains a small italic `.lang-note` directly under the demo CTA stating that the demo and Decision Report are English. Removes the surprise of clicking "Запустить демо" on the Russian landing and arriving on an English page.
+
+### Changed
+- New `.lang-note` style in `style.css` — subtle muted italic note, max-width 640 px.
+- Version strings bumped v0.7.6 → v0.7.7 in `main.go` run notes, all four landing footers, and the demo kicker.
+
+### Not changed
+- The landing-page language switcher remains exactly as in v0.7.6 — that one IS honest (clicking RU on the English landing takes you to the actual Russian landing).
+- Histogram, wheat fetcher, dataset loader, constraint engine, honesty layer, self-update — all unchanged.
+
 ## [0.7.6] - 2026-05-22
 
 ### Added — Live allele-frequency-spectrum (AFS) histogram

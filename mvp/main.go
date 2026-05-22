@@ -519,7 +519,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.6 adds a live allele-frequency-spectrum histogram (one tracked strategy, updated per generation during the run), a wheat fetcher (CerealsDB / T3), and Russian / Spanish / Uzbek landing pages. v0.7.5 external real-data deploy, v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
+		"BreedOS v0.7.7 fixes the misleading language switcher on the demo (removed; localized landings now explicitly state that demo and Decision Report are English). v0.7.6 live histogram + wheat fetcher + i18n landings (ru/es/uz), v0.7.5 external real-data deploy, v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -559,7 +559,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.6 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.7 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

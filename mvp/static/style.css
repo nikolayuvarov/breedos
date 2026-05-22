@@ -506,6 +506,15 @@ td span { color: var(--muted); font-size: 12px; }
   letter-spacing: -0.01em;
 }
 
+/* v0.7.7 inline note about partial localization */
+.lang-note {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  max-width: 640px;
+}
+
 /* v0.7.6 language switcher in nav */
 .lang-switcher {
   display: inline-flex;
