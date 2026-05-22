@@ -1,0 +1,8 @@
+# Datasets folder: only tracked artifacts are this .gitignore and README.md.
+# All downloaded raw genotype data is large and stays out of git — fetch
+# locally per the README and deploy via deploy_breedos.sh.
+# (The manifest lives at ../mvp/datasets-manifest.json so the Go binary can
+# //go:embed it without dot-dot path issues.)
+*
+!.gitignore
+!README.md

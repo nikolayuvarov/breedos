@@ -171,6 +171,84 @@ else
   echo "[deploy] no external data files to consider"
 fi
 
+# v0.7.12: upload raw dataset archives from breedos/datasets/ per the
+# strategy declared in mvp/datasets-manifest.json:
+#   - "full"               → scp the entire file (size-skip applies)
+#   - "truncate_head_100mb" → scp only the first N MB (manifest sets N)
+#   - "manual" / "large_external" → skipped
+# Set BREEDOS_DEPLOY_FULL_LARGE=1 to override truncation and upload full
+# (use after a server-disk upgrade).
+REMOTE_DATASETS_DIR="${REMOTE_DATA_DIR}datasets/"
+MANIFEST_PATH="${SCRIPT_DIR}/mvp/datasets-manifest.json"
+if [[ -f "$MANIFEST_PATH" && -d "${SCRIPT_DIR}/datasets" ]]; then
+  echo "[deploy] processing datasets per ${MANIFEST_PATH#${SCRIPT_DIR}/}..."
+  # Emit one "filename<TAB>strategy<TAB>truncate_mb" per dataset
+  ENTRIES="$(python3 -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    m = json.load(f)
+truncate_mb = m.get("deploy_truncate_mb", 100)
+for d in m.get("datasets", []):
+    print("\t".join([d["filename"], d.get("deploy_strategy", "manual"), str(truncate_mb)]))
+' "$MANIFEST_PATH")"
+  if [[ -n "$ENTRIES" ]]; then
+    if ! ssh "$REMOTE_HOST" "mkdir -p '${REMOTE_DATASETS_DIR}'"; then
+      echo "[deploy] ERROR: could not mkdir ${REMOTE_DATASETS_DIR} on remote" >&2
+      exit 5
+    fi
+    while IFS=$'\t' read -r fname strategy truncate_mb; do
+      [[ -z "$fname" ]] && continue
+      local_path="${SCRIPT_DIR}/datasets/${fname}"
+      if [[ ! -f "$local_path" ]]; then
+        echo "[deploy]   ${fname}: not present locally (strategy=${strategy}) — skip"
+        continue
+      fi
+      local_size="$(stat -c %s "$local_path")"
+      remote_size_raw="$(ssh "$REMOTE_HOST" "stat -c %s '${REMOTE_DATASETS_DIR}${fname}' 2>/dev/null" || true)"
+      remote_size="${remote_size_raw//[^0-9]/}"
+      case "$strategy" in
+        full)
+          if [[ -n "$remote_size" && "$remote_size" == "$local_size" ]]; then
+            echo "[deploy]   ${fname}: ${local_size} bytes on remote (full) — skip"
+          else
+            echo "[deploy]   ${fname}: uploading full ${local_size} bytes"
+            scp "$local_path" "${TARGET}data/datasets/${fname}"
+          fi
+          ;;
+        truncate_head_100mb)
+          truncate_bytes=$(( truncate_mb * 1024 * 1024 ))
+          if [[ "${BREEDOS_DEPLOY_FULL_LARGE:-0}" == "1" ]]; then
+            # Upload the entire local file (which may itself be a partial download)
+            if [[ -n "$remote_size" && "$remote_size" == "$local_size" ]]; then
+              echo "[deploy]   ${fname}: ${local_size} bytes on remote (full override) — skip"
+            else
+              echo "[deploy]   ${fname}: uploading full ${local_size} bytes (BREEDOS_DEPLOY_FULL_LARGE=1)"
+              scp "$local_path" "${TARGET}data/datasets/${fname}"
+            fi
+          else
+            target_bytes=$(( local_size < truncate_bytes ? local_size : truncate_bytes ))
+            if [[ -n "$remote_size" && "$remote_size" == "$target_bytes" ]]; then
+              echo "[deploy]   ${fname}: ${target_bytes} bytes on remote (truncated) — skip"
+            else
+              tmp_trunc="$(mktemp "/tmp/breedos-trunc.XXXXXX")"
+              head -c "$target_bytes" "$local_path" > "$tmp_trunc"
+              echo "[deploy]   ${fname}: uploading head -c ${target_bytes} of ${local_size} bytes"
+              scp "$tmp_trunc" "${TARGET}data/datasets/${fname}"
+              rm -f "$tmp_trunc"
+            fi
+          fi
+          ;;
+        manual|large_external)
+          echo "[deploy]   ${fname}: deploy_strategy=${strategy} — skip (operator handles by hand)"
+          ;;
+        *)
+          echo "[deploy]   ${fname}: unknown deploy_strategy=${strategy} — skip" >&2
+          ;;
+      esac
+    done <<<"$ENTRIES"
+  fi
+fi
+
 REMOTE_FILE="${TARGET}${BINARY_NAME}.UPDATE"
 echo "[deploy] scp ${LOCAL_BUILD} -> ${REMOTE_FILE}"
 scp "$LOCAL_BUILD" "$REMOTE_FILE"

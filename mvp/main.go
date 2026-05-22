@@ -23,6 +23,9 @@ import (
 //go:embed static/*
 var embeddedStatic embed.FS
 
+//go:embed datasets-manifest.json
+var embeddedDatasetsManifest []byte
+
 type SimRequest struct {
 	Seed               int64   `json:"seed"`
 	PopulationSize     int     `json:"population_size"`
@@ -249,6 +252,7 @@ func main() {
 	mux.HandleFunc("/api/simulate", simulateHandler)
 	mux.HandleFunc("/api/simulate/start", startSimulationJobHandler)
 	mux.HandleFunc("/api/simulate/status", simulationJobStatusHandler)
+	mux.HandleFunc("/api/datasets", datasetsAPIHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -266,6 +270,8 @@ func main() {
 			path = "index-es.html"
 		case "uz":
 			path = "index-uz.html"
+		case "datasets":
+			path = "datasets.html"
 		}
 		if strings.Contains(path, "..") {
 			http.Error(w, "bad path", http.StatusBadRequest)
@@ -523,7 +529,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.10 fixes demo-grid width by switching from CSS Grid to Flexbox (flex: 1 1 0% + min-width: 0 on .results is the standard shrinkable-fill pattern; earlier grid attempts still rendered wider than the top cards). Cache-control hacks from v0.7.9 reverted. v0.7.8 histogram polish + tracked-strategy picker, v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + wheat fetcher + i18n landings, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.12 introduces a public-wheat datasets registry at /datasets backed by mvp/datasets-manifest.json (curated Figshare durum, Dryad panels, INRAE 1000 exomes, Zenodo lifted v2.1, Watkins WGS). deploy_breedos.sh uploads small archives fully and large ones head-truncated to 100 MB; BREEDOS_DEPLOY_FULL_LARGE=1 overrides. v0.7.11 demo-shell width fix, v0.7.10 Flexbox layout, v0.7.8 histogram polish + tracked-strategy picker, v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + i18n landings, and v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -563,7 +569,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.10 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.12 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

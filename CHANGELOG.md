@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.12] - 2026-05-22
+
+### Added — Public-wheat datasets registry
+
+A curated list of public wheat genotype datasets is now bundled with BreedOS and exposed at **`/datasets`**.
+
+`breedos/datasets/` (new folder):
+- `README.md` — usage notes + fetch commands. Tracked.
+- `.gitignore` — ignores everything except the README and itself. Tracked.
+- Raw archive files (`*.vcf`, `*.zip`, `*.xlsb`, ...) — **gitignored**. Fetched locally per the README; not redistributed by BreedOS.
+
+`breedos/mvp/datasets-manifest.json` (new tracked file, embedded into the binary via `//go:embed`):
+- Six entries spanning small + large + manual-only sources:
+  - `wheat_durum_figshare_259` — Figshare durum wheat 259 × 7817, VCFv4.2, 8.45 MB, full upload.
+  - `wheat_dryad_159_55k` — Dryad 55K SNPs × 159 wheat, .xlsb, 20.4 MB, manual download (Dryad blocks programmatic).
+  - `wheat_dryad_pakistani_37k` — Dryad Pakistani 37K, .xlsx set, 30.2 MB, manual download.
+  - `wheat_inrae_1000_exomes` — INRAE 1000 wheat exome ZIP, 2.25 GB, truncated to 100 MB on server.
+  - `wheat_zenodo_28m_v21` — Zenodo same SNPs lifted to RefSeq v2.1, 9.2 GB VCF, truncated to 100 MB on server.
+  - `wheat_watkins_g2b` — Watkins G2B portal landraces+cultivars, per-chromosome VCFs, manual.
+
+### Added — `/datasets` page and `/api/datasets` endpoint
+
+`mvp/datasets_api.go`:
+- `GET /api/datasets` reads the embedded manifest, merges it with the current on-server file sizes from `<bindir>/data/datasets/`, returns combined JSON. Each entry carries: id, name, full `size_bytes`, current `deployed_bytes`, `status` (`full` / `truncated` / `manual` / `missing` / `stale`), category, deploy strategy, source URL, landing URL, license, content description.
+
+`mvp/static/datasets.html`:
+- Plain-JS page that fetches `/api/datasets` on load and renders a table with columns: Name, Original size, On server, Status, Accessions × markers, Format, License, Source, Content.
+
+### Changed — `deploy_breedos.sh`
+
+The deploy script now iterates `mvp/datasets-manifest.json` entries and uploads files from `breedos/datasets/` to `<server>/data/datasets/<filename>` per the declared `deploy_strategy`:
+- `full` → `scp` whole file (size-skip applies).
+- `truncate_head_100mb` → upload only `head -c 100MB` (truncation cap is the manifest's `deploy_truncate_mb`).
+- `manual` / `large_external` → skipped.
+
+Set `BREEDOS_DEPLOY_FULL_LARGE=1` to override truncation and upload the full local file (use after a server-disk upgrade).
+
+### Changed
+- Version strings bumped `v0.7.11` → `v0.7.12` in `main.go` run notes, all four landing footers, and the demo kicker.
+
+### Not in this release
+- Big-dataset local downloads via the sandbox proxy timed out at partial bytes (848 MB of the INRAE 2.25 GB, 461 MB of the Zenodo 9.2 GB). The partials are valid file prefixes — the 100 MB truncation for server deploy works from them. Operator should re-fetch full archives on their workstation for a complete local copy.
+- Dryad files (55K + Pakistani 37K) cannot be fetched programmatically from this sandbox (HTTP 403). Marked `deploy_strategy: "manual"` in the manifest; operator visits the landing URL and saves files into `breedos/datasets/` before the next deploy.
+
+## [0.7.11] - 2026-05-22
+
+### Fixed — Demo shell width alignment
+
+The demo page now uses one explicit demo-width container (`--demo-max: 1340px`) for the navigation, honesty banner, title card, and bottom workbench. This fixes the remaining visual mismatch where the top of `/demo` was constrained by the generic landing-page `.wrap` width (`1180px`) while the lower simulation workbench appeared wider.
+
+Added nested `min-width: 0` guards for demo cards, result panels, grid children, chart cards, histogram cards, and table wrappers so charts/tables shrink or scroll inside the shared shell instead of widening the page.
+
+### Changed
+- Demo kicker and version strings bumped `v0.7.10` → `v0.7.11`.
+
 ## [0.7.10] - 2026-05-22
 
 ### Fixed — demo-grid width (definitive)

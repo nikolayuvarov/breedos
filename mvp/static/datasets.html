@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS Datasets — public wheat genotype panels</title>
+  <meta name="description" content="Curated list of public wheat genotype datasets BreedOS can ingest. Shows original size, size currently on server, status, source URL, and content for each.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="/">Landing</a>
+      <a href="/demo">Demo</a>
+    </div>
+  </nav>
+
+  <main class="wrap section">
+    <div class="card" style="margin-bottom:18px">
+      <div class="kicker">v0.7.12 — datasets registry</div>
+      <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Curated public wheat datasets</h1>
+      <p class="lede">
+        Real wheat genotype data that BreedOS can load as a founder population. Below: original archive size, size currently deployed on the server, download source, license, and a one-line content summary. Small datasets are mirrored fully; large datasets are truncated to the first 100 MB on the server unless an explicit full-upload deploy was made.
+      </p>
+      <p class="note">
+        Raw archives are not redistributed by BreedOS — links go to the original publishers. License terms are theirs. BreedOS only mirrors what it has fetched for its own use.
+      </p>
+    </div>
+
+    <div class="card" id="datasetsCard">
+      <div id="datasetsStatus" class="status">Loading dataset registry…</div>
+      <div id="datasetsTableWrap" class="table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Original size</th>
+              <th>On server</th>
+              <th>Status</th>
+              <th>Accessions × markers</th>
+              <th>Format</th>
+              <th>License</th>
+              <th>Source</th>
+              <th>Content</th>
+            </tr>
+          </thead>
+          <tbody id="datasetsTable"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.7.12 — decision-layer simulator, not a wet-lab protocol. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+  </footer>
+
+  <script>
+    function fmtBytes(n) {
+      if (n == null || isNaN(n)) return '—';
+      const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0, v = Number(n);
+      while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+      return v.toFixed(v < 10 && i > 0 ? 2 : 1) + ' ' + u[i];
+    }
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    }
+    function statusBadge(status) {
+      const colors = {
+        full:      ['#5fd49b', 'on server'],
+        truncated: ['#ffb45a', 'truncated (~100 MB)'],
+        manual:    ['#9bb1ad', 'manual download'],
+        missing:   ['#ff9a9a', 'not deployed'],
+        stale:     ['#ffb45a', 'stale (size mismatch)']
+      };
+      const [color, label] = colors[status] || ['#9bb1ad', status || '—'];
+      return '<span style="color:' + color + ';font-weight:700">' + escapeHtml(label) + '</span>';
+    }
+    async function loadDatasets() {
+      const status = document.getElementById('datasetsStatus');
+      const wrap = document.getElementById('datasetsTableWrap');
+      const tbody = document.getElementById('datasetsTable');
+      try {
+        const res = await fetch('/api/datasets', { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const rows = (data.datasets || []).map(d => {
+          const accMark = (d.accessions != null && d.markers != null)
+            ? (d.accessions + ' × ' + d.markers)
+            : (d.accessions != null ? d.accessions + ' acc' : (d.markers != null ? d.markers + ' SNPs' : '—'));
+          const sourceA = d.source_url
+            ? '<a href="' + escapeHtml(d.source_url) + '" rel="noopener nofollow">direct</a>'
+            : '—';
+          const landingA = d.landing_url
+            ? ' · <a href="' + escapeHtml(d.landing_url) + '" rel="noopener nofollow">landing</a>'
+            : '';
+          const note = d.manual_reason
+            ? '<br><small style="color:#ffb45a">' + escapeHtml(d.manual_reason) + '</small>'
+            : '';
+          return '<tr>'
+            + '<td><strong>' + escapeHtml(d.name) + '</strong><br><span>' + escapeHtml(d.id) + '</span></td>'
+            + '<td>' + fmtBytes(d.size_bytes) + '</td>'
+            + '<td>' + fmtBytes(d.deployed_bytes) + '</td>'
+            + '<td>' + statusBadge(d.status) + note + '</td>'
+            + '<td>' + escapeHtml(accMark) + (d.ploidy ? '<br><small>' + escapeHtml(d.ploidy) + '</small>' : '') + '</td>'
+            + '<td>' + escapeHtml(d.format) + '</td>'
+            + '<td>' + escapeHtml(d.license) + '</td>'
+            + '<td>' + sourceA + landingA + '</td>'
+            + '<td>' + escapeHtml(d.content) + '</td>'
+            + '</tr>';
+        }).join('');
+        tbody.innerHTML = rows || '<tr><td colspan="9">No datasets registered.</td></tr>';
+        status.textContent = (data.description || '') + ' Truncation cap for large datasets: ' + (data.deploy_truncate_mb || '?') + ' MB.';
+        status.className = 'status ok';
+        wrap.hidden = false;
+      } catch (e) {
+        status.textContent = 'Failed to load /api/datasets: ' + e.message;
+        status.className = 'status error';
+      }
+    }
+    loadDatasets();
+  </script>
+</body>
+</html>

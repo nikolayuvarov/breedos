@@ -13,6 +13,7 @@
   --shadow: 0 18px 45px rgba(0,0,0,0.35);
   --radius: 22px;
   --max: 1180px;
+  --demo-max: 1340px;
 }
 
 * { box-sizing: border-box; }
@@ -195,22 +196,37 @@ ul.clean { padding-left: 19px; color: var(--muted); line-height: 1.7; }
 .footer { padding: 48px 0; border-top: 1px solid var(--line); color: var(--muted); }
 
 /* Demo */
+.demo-nav,
+.demo-shell {
+  width: min(var(--demo-max), calc(100% - 36px));
+}
 .demo-shell { padding: 26px 0 60px; }
-/* v0.7.10: switched .demo-grid from CSS Grid to Flexbox. Earlier attempts
-   with `grid-template-columns: 360px minmax(0, 1fr)` + `min-width: 0` on
-   grid items still rendered the .demo-grid visibly wider than the top
-   hero / title cards (verified on production v0.7.9). Flexbox with
-   `flex: 1 1 0%` + `min-width: 0` on the .results column is the standard
-   shrinkable-fill pattern and constrains the flex container to its parent
-   width without surprises. */
+/* v0.7.11: demo has its own shared shell width so the top banner/title card,
+   nav, and bottom workbench line up. Keep min-width: 0 on nested demo blocks
+   so charts and tables scroll/shrink inside the shell instead of widening it. */
 .demo-grid {
   display: flex;
   flex-direction: row;
+  width: 100%;
+  max-width: 100%;
   gap: 18px;
   align-items: flex-start;
 }
 .demo-grid > .sticky-panel { flex: 0 0 360px; }
 .demo-grid > .results { flex: 1 1 0%; min-width: 0; }
+.demo-shell .card,
+.demo-grid,
+.demo-grid > *,
+.demo-shell .results,
+.demo-shell .results > *,
+.demo-shell .grid2 > *,
+.demo-shell .summary-grid > *,
+.demo-shell .decision-grid > *,
+.demo-shell .chart-card,
+.demo-shell .histogram-card,
+.demo-shell .table-wrap {
+  min-width: 0;
+}
 .form-grid { display: grid; gap: 12px; }
 .field label {
   display: flex;
