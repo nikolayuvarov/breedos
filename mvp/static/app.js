@@ -29,7 +29,9 @@ const labels = {
 let currentData = null;
 let previousData = null;
 // v0.7.6 live histogram: latest AFS snapshot received from /api/simulate/status.
+// v0.7.8 — also cache the last-drawn generation key to skip redundant redraws.
 let lastSnapshot = null;
+let lastDrawnGeneration = -1;
 
 function byId(id) { return document.getElementById(id); }
 
@@ -56,6 +58,7 @@ function requestFromForm() {
     crispr_edits: Math.trunc(numberValue('crispr_edits')),
     crispr_intro_percent: numberValue('crispr_intro_percent'),
     strategy_set: (byId('strategy_set') && byId('strategy_set').value) || 'core',
+    tracked_strategy: (byId('tracked_strategy') && byId('tracked_strategy').value) || '',
     replicates: Math.trunc(numberValue('replicates')),
     worker_count: Math.trunc(numberValue('worker_count')),
     inbreeding_limit: numberValue('inbreeding_limit'),
@@ -175,6 +178,7 @@ async function runSimulation() {
   setStatus('Starting simulation job...', '');
   // v0.7.6 live histogram: reset snapshot state for a fresh run.
   lastSnapshot = null;
+  lastDrawnGeneration = -1;
   resetLiveHistogram();
   try {
     const startRes = await fetch('/api/simulate/start', {
@@ -201,11 +205,20 @@ async function runSimulation() {
       setRunButtonProgress(percent, job.done ? 'Finishing' : 'Running');
       setStatus(`${job.message || 'Running'} — ${Math.round(percent)}%`, '');
       if (job.latest_snapshot) {
-        lastSnapshot = job.latest_snapshot;
-        drawLiveHistogram(lastSnapshot);
+        const incomingGen = Number(job.latest_snapshot.generation);
+        // v0.7.8: only redraw when the generation actually advances; cheap
+        // dedup against repeated polls reading the same final snapshot
+        // (which previously caused visible re-render jitter near run end).
+        if (incomingGen !== lastDrawnGeneration) {
+          lastSnapshot = job.latest_snapshot;
+          lastDrawnGeneration = incomingGen;
+          drawLiveHistogram(lastSnapshot);
+        }
       }
       if (job.done) break;
-      await sleep(120);
+      // v0.7.8: tightened polling from 120ms to 80ms for snappier histogram
+      // updates without meaningful extra server load.
+      await sleep(80);
     }
 
     if (job.error) throw new Error(job.error);
@@ -524,7 +537,12 @@ function drawLiveHistogram(snap) {
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
   const bins = snap.bins.map(v => Number(v) || 0);
-  const maxV = Math.max(1, ...bins);
+  // v0.7.8: fix Y-axis to total markers (sum of bins). Bins always sum to M,
+  // so this gives a stable scale across all generations — no rescaling
+  // jitter as alleles drift toward fixation. Bars represent fraction of
+  // markers in each frequency bin.
+  const totalMarkers = bins.reduce((a, b) => a + b, 0);
+  const maxV = Math.max(1, totalMarkers);
   ctx.fillStyle = 'rgba(255,255,255,0.025)';
   ctx.fillRect(margin.left, margin.top, innerW, innerH);
   ctx.strokeStyle = 'rgba(255,255,255,0.10)';
@@ -753,6 +771,7 @@ function requestSignature(req) {
     crispr_edits: Number(req.crispr_edits) || 0,
     crispr_intro_percent: Number(req.crispr_intro_percent) || 0,
     strategy_set: String(req.strategy_set || 'core'),
+    tracked_strategy: String(req.tracked_strategy || ''),
     replicates: Number(req.replicates) || 0,
     worker_count: Number(req.worker_count) || 0,
     inbreeding_limit: Number(req.inbreeding_limit) || 0,
@@ -781,6 +800,7 @@ function changedParams(prevReq, curReq) {
     ['crispr_edits', 'CRISPR edits'],
     ['crispr_intro_percent', 'edit intro %'],
     ['strategy_set', 'strategy set'],
+    ['tracked_strategy', 'tracked strategy'],
     ['replicates', 'replicates'],
     ['worker_count', 'worker count'],
     ['inbreeding_limit', 'inbreeding limit'],

@@ -50,6 +50,10 @@ type SimRequest struct {
 	// v0.7.4 dataset loader (Issue 04). "" or "synthetic" = generated population;
 	// "arabidopsis1001" = load real Arabidopsis 1001 Genomes founders from embedded CSV.
 	Dataset string `json:"dataset"`
+	// v0.7.8 strategy picker for live AFS histogram. "" or "auto" = prefer "balanced",
+	// else first configured strategy. A non-empty value is taken as a strategy code
+	// (e.g. "aggressive"); if not present in the run's strategy set, falls back to auto.
+	TrackedStrategy string `json:"tracked_strategy"`
 }
 
 type SimResponse struct {
@@ -519,7 +523,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.7 fixes the misleading language switcher on the demo (removed; localized landings now explicitly state that demo and Decision Report are English). v0.7.6 live histogram + wheat fetcher + i18n landings (ru/es/uz), v0.7.5 external real-data deploy, v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
+		"BreedOS v0.7.8 polishes the live histogram (initial gen-0 snapshot, stable Y-axis, dedup'd redraws, snappier poll), adds a tracked-strategy picker, and fixes demo-grid width so it lines up with the top hero / title cards. v0.7.7 lang-switcher honesty fix, v0.7.6 live histogram + wheat fetcher + i18n landings, v0.7.5 external real-data deploy, v0.7.4 dataset loader, v0.7.3 constraint engine, v0.7.2 honesty layer, and v0.7.1 self-update watcher are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -559,7 +563,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.7 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.8 uses a budget guard and worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }
@@ -618,14 +622,39 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 	workers := effectiveWorkerCount(req.WorkerCount, jobCount)
 	reportProgress(progress, 6, fmt.Sprintf("parallel decision engine: %d strategies × %d replicates, %d workers", strategyCount, req.Replicates, workers))
 	// v0.7.6 live histogram: track AFS snapshots from ONE strategy / one replicate
-	// to avoid concurrent writes from multiple workers. Prefer "balanced" since it
-	// is the BreedOS default; otherwise fall back to the first configured strategy.
-	trackIdx := 0
-	for i, cfg := range strategies {
-		if cfg.Code == "balanced" {
-			trackIdx = i
-			break
+	// to avoid concurrent writes from multiple workers. v0.7.8 honors an explicit
+	// TrackedStrategy if it matches one of the configured strategies; otherwise
+	// falls back to "balanced", otherwise to the first configured strategy.
+	trackIdx := -1
+	if req.TrackedStrategy != "" && strings.ToLower(req.TrackedStrategy) != "auto" {
+		for i, cfg := range strategies {
+			if cfg.Code == req.TrackedStrategy {
+				trackIdx = i
+				break
+			}
 		}
+	}
+	if trackIdx == -1 {
+		trackIdx = 0
+		for i, cfg := range strategies {
+			if cfg.Code == "balanced" {
+				trackIdx = i
+				break
+			}
+		}
+	}
+	// v0.7.8: emit a generation-0 snapshot of the founder population so the
+	// live histogram has data to render the instant the client starts polling
+	// — no perceived startup delay before the first generation completes.
+	if snapshot != nil && trackIdx >= 0 && trackIdx < len(strategies) {
+		trackedCfg := strategies[trackIdx]
+		snapshot(AFSSnapshot{
+			Generation:       0,
+			TotalGenerations: req.Generations,
+			StrategyCode:     trackedCfg.Code,
+			StrategyName:     trackedCfg.Name,
+			Bins:             afsBinsFromPop(initial, req.Markers),
+		})
 	}
 	tasks := make(chan strategyTask)
 	out := make(chan strategyTaskResult, jobCount)

@@ -21,7 +21,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.7 — live AFS histogram + wheat data + i18n landings + external real-data</div>
+      <div class="kicker">MVP v0.7.8 — histogram polish + strategy picker + width fix</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -130,6 +130,27 @@
             <select id="strategy_set">
               <option value="core" selected>core</option>
               <option value="advanced">advanced</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>
+              <span>Live histogram tracks <span class="tip" tabindex="0" data-tip="Which strategy the live allele-frequency-spectrum chart updates from during the run. Default `auto` picks `balanced`, otherwise the first strategy. If the selected strategy is not part of the current run (e.g. advanced-only when core is selected), the server falls back to auto.">?</span></span>
+              <span>AFS chart</span>
+            </label>
+            <select id="tracked_strategy">
+              <option value="" selected>auto (prefer balanced)</option>
+              <option value="neutral">Neutral drift</option>
+              <option value="aggressive">Aggressive</option>
+              <option value="diversity">Diversity-preserving</option>
+              <option value="balanced">Balanced</option>
+              <option value="balanced_crispr">Balanced + CRISPR</option>
+              <option value="random">Random baseline (advanced)</option>
+              <option value="phenotype">Phenotype truncation (advanced)</option>
+              <option value="genomic">Genomic mock (advanced)</option>
+              <option value="ocs_like">OCS-like (advanced)</option>
+              <option value="cross_planner">Cross planner (advanced)</option>
+              <option value="edit_introgression">Edit introgression (advanced)</option>
             </select>
           </div>
 

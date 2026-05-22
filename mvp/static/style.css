@@ -226,7 +226,12 @@ input[type="checkbox"] { transform: scale(1.15); }
 .status.error { color: var(--danger); }
 .status.ok { color: var(--ok); }
 .status.dirty { color: #ffd38c; }
-.results { display: grid; gap: 18px; }
+/* v0.7.8: min-width:0 on grid children so 900px-wide canvases (chart_gain,
+   chart_pareto, chart_histogram, etc.) don't force the 1fr column to expand
+   its min-content size beyond the parent .wrap width. Without this, the
+   .demo-grid renders ~30px wider than the top hero/title cards. */
+.demo-grid > * { min-width: 0; }
+.results { display: grid; gap: 18px; min-width: 0; }
 .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 .metric-card { padding: 14px; border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,0.04); }
 .metric-card .label { color: var(--muted); font-size: 12px; }

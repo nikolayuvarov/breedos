@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.8] - 2026-05-22
+
+### Fixed — Demo-grid width / top hero narrower than bottom
+
+Top hero cards (honesty banner, "Selection Strategy Simulator" title) rendered visibly narrower than the bottom two-column `.demo-grid`. Root cause: the `1fr` right column of `.demo-grid` was being forced to its min-content size by the embedded 900px-wide canvases (chart_gain, chart_pareto, the new chart_histogram). Without `min-width: 0` on grid items, CSS Grid expands `1fr` past its parent's width to accommodate min-content. The result: `.demo-grid` was ~30 px wider than `.wrap`.
+
+Fix: `.demo-grid > * { min-width: 0; }` and an explicit `min-width: 0` on `.results`. Both columns now honor the parent `.wrap` width; the demo-grid and the top hero cards line up.
+
+### Fixed — Live histogram delay at start + jitter at end
+
+Three small fixes addressing the user-reported delay + twitching:
+
+- **Initial generation-0 snapshot.** The backend emits a snapshot of the founder population *before* the worker pool starts running generations, so the live histogram has content the instant the client begins polling — no perceived startup delay waiting for generation 1 to finish.
+- **Stable Y-axis.** `drawLiveHistogram` now anchors the Y-axis to the total marker count (sum of bins, constant within a run) instead of the dynamic per-snapshot max. Bars represent the fraction of markers in each frequency bin and the scale never rescales — no visible "jumping" as alleles drift toward fixation in late generations.
+- **Dedup'd redraws.** The polling loop now keeps a `lastDrawnGeneration` counter and only redraws when the snapshot's generation actually advances. Repeated polls reading the same final snapshot no longer trigger `clearRect` + redraw, which was causing subtle jitter near run end.
+- **Snappier polling (120 ms → 80 ms).** Tighter loop interval for crisper per-generation updates. The status endpoint is cheap; no meaningful extra server load.
+
+### Added — Tracked-strategy picker for the live histogram
+
+New `tracked_strategy` field on `SimRequest` (string; default `""` / `"auto"` = prefer "balanced" else first configured strategy). When set to a strategy code (e.g. `"aggressive"`, `"ocs_like"`), the live AFS histogram tracks that strategy instead of the default. If the selected code isn't part of the current strategy set (e.g. an advanced-only code while running `strategy_set: "core"`), the server falls back to auto behaviour — no error.
+
+Demo form gains a "Live histogram tracks" `<select>` below the strategy-set dropdown with all 11 strategy codes plus "auto". `requestSignature` and `changedParams` include `tracked_strategy` so cache invalidation works when the operator changes only the picked strategy.
+
+### Changed
+- `runSimulation` and `runSimulationWithProgress` still wrap `runSimulationWithCallbacks` (unchanged signatures).
+- Version strings bumped `v0.7.7` → `v0.7.8` in `main.go` run notes, all four landing footers, and the demo kicker.
+
+### Not changed
+- Wheat fetch script unchanged in this release. (The CerealsDB endpoint returned a 503 through the proxy during one fetch attempt; retry after CerealsDB is healthy.)
+- Histogram concurrency model (single tracked strategy, single replicate, mutex-protected snapshot writes) unchanged.
+
 ## [0.7.7] - 2026-05-22
 
 ### Fixed — Misleading language switcher on demo
