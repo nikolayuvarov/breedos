@@ -1,0 +1,377 @@
+package main
+
+// v0.7.16 — sensitivity analysis (Issue 09).
+//
+// Run the same base simulation across N values of one axis (heritability,
+// selection_percent, generations) and ask: does the best-feasible strategy
+// stay the same? If yes the recommendation is "stable"; if it changes the
+// recommendation is "fragile" — the user should not trust a single run.
+//
+// Reuses the existing simulation engine. Each scenario is one full
+// runSimulationWithCallbacks call. Scenarios run sequentially so the
+// budget guard composes cleanly with the per-run cap.
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	// Same cap as a single simulation, applied to the SUM of all scenario
+	// budgets. Matches the per-run cap so a sweep can't outgrow what one
+	// large run is allowed. Kept in sync with validateRequest in main.go.
+	sensitivityBudgetCap = 1500000000
+
+	// Practical cap to keep UI useful and prod queue short. 5 is the
+	// default; users can ask for less. We don't allow more for v0.7.16
+	// because the table view stays readable at 5.
+	sensitivityMaxValues = 5
+)
+
+type SensitivityRequest struct {
+	Base   SimRequest `json:"base"`
+	Axis   string     `json:"axis"`
+	Values []float64  `json:"values"`
+}
+
+type SensitivityScenario struct {
+	AxisValue        float64 `json:"axis_value"`
+	BestFeasibleCode string  `json:"best_feasible_code"`
+	BestFeasibleName string  `json:"best_feasible_name"`
+	GeneticGain      float64 `json:"genetic_gain"`
+	Diversity        float64 `json:"diversity"`
+	Inbreeding       float64 `json:"inbreeding"`
+	RareUsefulLost   int     `json:"rare_useful_lost"`
+	CombinedRisk     float64 `json:"combined_risk"`
+	BaselineMatch    bool    `json:"baseline_match"`
+	InfeasibleNote   string  `json:"infeasible_note,omitempty"`
+}
+
+type SensitivitySummary struct {
+	BaselineAxisValue float64  `json:"baseline_axis_value"`
+	BaselineBestCode  string   `json:"baseline_best_code"`
+	BaselineBestName  string   `json:"baseline_best_name"`
+	Stable            bool     `json:"stable"`
+	Verdict           string   `json:"verdict"` // "stable" | "fragile" | "inconclusive"
+	StrategySwitches  int      `json:"strategy_switches"`
+	Notes             []string `json:"notes"`
+}
+
+type SensitivityResult struct {
+	Base      SimRequest            `json:"base"`
+	Axis      string                `json:"axis"`
+	Values    []float64             `json:"values"`
+	Scenarios []SensitivityScenario `json:"scenarios"`
+	Summary   SensitivitySummary    `json:"summary"`
+}
+
+type SensitivityJobStatus struct {
+	JobID   string             `json:"job_id"`
+	Percent int                `json:"percent"`
+	Message string             `json:"message"`
+	Done    bool               `json:"done"`
+	Error   string             `json:"error,omitempty"`
+	Result  *SensitivityResult `json:"result,omitempty"`
+}
+
+type sensJob struct {
+	ID        string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Percent   int
+	Message   string
+	Done      bool
+	Error     string
+	Result    *SensitivityResult
+}
+
+var sensJobStore = struct {
+	sync.Mutex
+	NextID uint64
+	Jobs   map[string]*sensJob
+}{Jobs: make(map[string]*sensJob)}
+
+// validSensitivityAxes maps axis name → predicate that applies the value to
+// a SimRequest. Adding a new axis only requires adding one entry here.
+var validSensitivityAxes = map[string]func(*SimRequest, float64){
+	"heritability":      func(r *SimRequest, v float64) { r.Heritability = v },
+	"selection_percent": func(r *SimRequest, v float64) { r.SelectionPercent = v },
+	"generations":       func(r *SimRequest, v float64) { r.Generations = int(v + 0.5) },
+}
+
+func validateSensitivityRequest(req SensitivityRequest) error {
+	apply, ok := validSensitivityAxes[req.Axis]
+	if !ok {
+		keys := make([]string, 0, len(validSensitivityAxes))
+		for k := range validSensitivityAxes {
+			keys = append(keys, k)
+		}
+		return fmt.Errorf("axis must be one of %s; got %q", strings.Join(keys, ", "), req.Axis)
+	}
+	if len(req.Values) == 0 {
+		return errors.New("values must be a non-empty list")
+	}
+	if len(req.Values) > sensitivityMaxValues {
+		return fmt.Errorf("at most %d values per sweep (v0.7.16 limit); got %d", sensitivityMaxValues, len(req.Values))
+	}
+	// Validate each scenario individually first — clearer errors than a
+	// budget overflow. Also catches axis-specific range violations (e.g.
+	// heritability outside [0,1]).
+	total := int64(0)
+	for i, v := range req.Values {
+		scen := req.Base
+		normalizeRequest(&scen)
+		apply(&scen, v)
+		strategies := buildStrategyConfigs(scen)
+		if err := validateRequest(scen, len(strategies)); err != nil {
+			return fmt.Errorf("scenario %d (%s=%g) invalid: %v", i+1, req.Axis, v, err)
+		}
+		total += simulationBudget(scen, len(strategies))
+	}
+	if total > sensitivityBudgetCap {
+		return fmt.Errorf("sensitivity sweep budget too high: sum of per-scenario budgets must be <= %d; got %d (reduce population, markers, generations, replicates, or number of values)", sensitivityBudgetCap, total)
+	}
+	return nil
+}
+
+func sensitivityStartHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req SensitivityRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	normalizeRequest(&req.Base)
+	if err := validateSensitivityRequest(req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	id := createSensJob()
+	go runSensitivityJob(id, req)
+	writeJSON(w, SimJobStartResponse{JobID: id})
+}
+
+func sensitivityStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "use GET", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "missing id", http.StatusBadRequest)
+		return
+	}
+	sensJobStore.Lock()
+	job, ok := sensJobStore.Jobs[id]
+	sensJobStore.Unlock()
+	if !ok {
+		http.Error(w, "job not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, SensitivityJobStatus{
+		JobID:   job.ID,
+		Percent: job.Percent,
+		Message: job.Message,
+		Done:    job.Done,
+		Error:   job.Error,
+		Result:  job.Result,
+	})
+}
+
+func createSensJob() string {
+	sensJobStore.Lock()
+	defer sensJobStore.Unlock()
+	sensJobStore.NextID++
+	id := fmt.Sprintf("sens-%d-%d", time.Now().UnixNano(), sensJobStore.NextID)
+	sensJobStore.Jobs[id] = &sensJob{ID: id, CreatedAt: time.Now(), UpdatedAt: time.Now(), Message: "queued"}
+	return id
+}
+
+func updateSensJob(id string, percent int, message string, result *SensitivityResult, errMsg string, done bool) {
+	sensJobStore.Lock()
+	defer sensJobStore.Unlock()
+	job, ok := sensJobStore.Jobs[id]
+	if !ok {
+		return
+	}
+	if percent >= 0 {
+		job.Percent = percent
+	}
+	if message != "" {
+		job.Message = message
+	}
+	if result != nil {
+		job.Result = result
+	}
+	if errMsg != "" {
+		job.Error = errMsg
+	}
+	if done {
+		job.Done = true
+	}
+	job.UpdatedAt = time.Now()
+}
+
+func runSensitivityJob(jobID string, req SensitivityRequest) {
+	apply := validSensitivityAxes[req.Axis]
+	scenarios := make([]SensitivityScenario, 0, len(req.Values))
+	n := len(req.Values)
+	for i, v := range req.Values {
+		scen := req.Base
+		normalizeRequest(&scen)
+		apply(&scen, v)
+		updateSensJob(jobID, 100*i/n,
+			fmt.Sprintf("scenario %d/%d: %s=%g", i+1, n, req.Axis, v),
+			nil, "", false)
+		resp, err := runSimulationWithCallbacks(scen,
+			func(int, string) {}, // ignore inner progress
+			func(AFSSnapshot) {}) // ignore snapshots for sweep — too noisy
+		if err != nil {
+			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g) failed: %v", i+1, req.Axis, v, err), true)
+			return
+		}
+		scenarios = append(scenarios, summarizeScenario(v, resp))
+	}
+	result := assembleSensitivityResult(req, scenarios)
+	updateSensJob(jobID, 100, "complete", result, "", true)
+}
+
+// summarizeScenario picks the headline numbers we want in the sweep table
+// for one finished simulation. BestFeasibleCode is only populated when
+// constraints are applied; when no constraints are active we fall back to
+// BestRiskAdjustedCode (the de facto recommendation in that mode).
+func summarizeScenario(axisValue float64, resp SimResponse) SensitivityScenario {
+	code := resp.Decision.BestFeasibleCode
+	name := resp.Decision.BestFeasibleName
+	if code == "" {
+		code = resp.Decision.BestRiskAdjustedCode
+		// BestRiskAdjustedName doesn't exist; derive from strategies list.
+		for _, s := range resp.Strategies {
+			if s.Code == code {
+				name = s.Name
+				break
+			}
+		}
+	}
+	out := SensitivityScenario{
+		AxisValue:        axisValue,
+		BestFeasibleCode: code,
+		BestFeasibleName: name,
+		InfeasibleNote:   resp.Decision.FeasibilityNote,
+	}
+	if code == "" {
+		return out
+	}
+	for _, s := range resp.Strategies {
+		if s.Code == code {
+			out.GeneticGain = s.Final.GeneticGain
+			out.Diversity = s.Final.Diversity
+			out.Inbreeding = s.Final.Inbreeding
+			out.RareUsefulLost = s.Final.RareUsefulLost
+			out.CombinedRisk = combinedRisk(s.Final)
+			break
+		}
+	}
+	return out
+}
+
+// assembleSensitivityResult derives the stable/fragile verdict by comparing
+// the BestFeasibleCode of each scenario against the baseline. Baseline = the
+// scenario whose axis value is closest to the value already in req.Base.
+func assembleSensitivityResult(req SensitivityRequest, scenarios []SensitivityScenario) *SensitivityResult {
+	baselineValue := baselineValueForAxis(req)
+	baselineIdx := nearestIndex(req.Values, baselineValue)
+	var baselineCode, baselineName string
+	if baselineIdx >= 0 && baselineIdx < len(scenarios) {
+		baselineCode = scenarios[baselineIdx].BestFeasibleCode
+		baselineName = scenarios[baselineIdx].BestFeasibleName
+	}
+	switches := 0
+	infeasibleCount := 0
+	for i := range scenarios {
+		scenarios[i].BaselineMatch = scenarios[i].BestFeasibleCode == baselineCode && baselineCode != ""
+		if !scenarios[i].BaselineMatch && scenarios[i].BestFeasibleCode != "" && baselineCode != "" {
+			switches++
+		}
+		if scenarios[i].BestFeasibleCode == "" {
+			infeasibleCount++
+		}
+	}
+	summary := SensitivitySummary{
+		BaselineAxisValue: baselineValue,
+		BaselineBestCode:  baselineCode,
+		BaselineBestName:  baselineName,
+		StrategySwitches:  switches,
+	}
+	switch {
+	case infeasibleCount > 0 && infeasibleCount < len(scenarios):
+		summary.Stable = false
+		summary.Verdict = "fragile"
+		summary.Notes = append(summary.Notes, fmt.Sprintf("%d of %d scenarios produced no feasible strategy — constraints are at the edge of what this configuration can deliver.", infeasibleCount, len(scenarios)))
+	case infeasibleCount == len(scenarios):
+		summary.Stable = false
+		summary.Verdict = "inconclusive"
+		summary.Notes = append(summary.Notes, "All scenarios infeasible. Loosen constraints (max_inbreeding, max_diversity_loss, etc.) or reduce min thresholds.")
+	case switches == 0:
+		summary.Stable = true
+		summary.Verdict = "stable"
+		summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy %q stays the same across all %d scenarios. The recommendation is robust to changes in %s within the sampled range.", baselineCode, len(scenarios), req.Axis))
+	default:
+		summary.Stable = false
+		summary.Verdict = "fragile"
+		summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy changes in %d of %d scenarios. The single-run recommendation %q may not hold if %s differs from the baseline.", switches, len(scenarios), baselineCode, req.Axis))
+	}
+	return &SensitivityResult{
+		Base:      req.Base,
+		Axis:      req.Axis,
+		Values:    req.Values,
+		Scenarios: scenarios,
+		Summary:   summary,
+	}
+}
+
+func baselineValueForAxis(req SensitivityRequest) float64 {
+	switch req.Axis {
+	case "heritability":
+		return req.Base.Heritability
+	case "selection_percent":
+		return req.Base.SelectionPercent
+	case "generations":
+		return float64(req.Base.Generations)
+	}
+	return 0
+}
+
+func nearestIndex(values []float64, target float64) int {
+	if len(values) == 0 {
+		return -1
+	}
+	best := 0
+	bestDist := abs64(values[0] - target)
+	for i := 1; i < len(values); i++ {
+		d := abs64(values[i] - target)
+		if d < bestDist {
+			bestDist = d
+			best = i
+		}
+	}
+	return best
+}
+
+func abs64(x float64) float64 {
+	if x < 0 {
+		return -x
+	}
+	return x
+}

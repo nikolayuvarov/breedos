@@ -22,7 +22,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.15 — live budget meter + 1.5B cap</div>
+      <div class="kicker">MVP v0.7.16 — sensitivity sweep</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -261,6 +261,36 @@
         <div class="card">
           <h2 style="font-size:28px">Decision engine output</h2>
           <div id="decisionPanel"></div>
+        </div>
+
+        <div class="card" id="sensitivityCard">
+          <h2 style="font-size:24px">Sensitivity sweep <small style="color:var(--muted); font-size:14px; font-weight:400">— does the recommendation hold if h² / selection / horizon shifts?</small></h2>
+          <div class="sens-controls">
+            <label class="sens-label">Axis<select id="sensAxis">
+              <option value="heritability">Heritability (h²)</option>
+              <option value="selection_percent">Selection intensity (%)</option>
+              <option value="generations">Generations horizon</option>
+            </select></label>
+            <label class="sens-label sens-values-label">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
+            <button id="sensRunBtn" class="btn primary" type="button">Run sweep</button>
+          </div>
+          <div id="sensBudget" class="budget-meter"></div>
+          <div id="sensStatus" class="status"></div>
+          <div id="sensVerdict" class="sens-verdict" hidden></div>
+          <div id="sensTableWrap" class="table-wrap" hidden>
+            <table>
+              <thead><tr>
+                <th>Axis value</th>
+                <th>Best strategy</th>
+                <th>Gain</th>
+                <th>Diversity</th>
+                <th>Inbreeding</th>
+                <th>Combined risk</th>
+                <th>Match?</th>
+              </tr></thead>
+              <tbody id="sensTable"></tbody>
+            </table>
+          </div>
         </div>
 
         <div class="card">

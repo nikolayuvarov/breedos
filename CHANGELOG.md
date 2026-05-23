@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.16] - 2026-05-23
+
+### Added — Sensitivity sweep (Issue 09)
+
+Runs the same configuration across up to 5 values of one axis (heritability, selection percent, or generations horizon) and compares the best-feasible strategy across scenarios. The recommendation gets a verdict:
+
+- **stable** — same strategy wins in every scenario; recommendation is robust to changes in that axis within the sampled range.
+- **fragile** — strategy switches in at least one scenario; the single-run recommendation may not hold if the axis differs from the baseline.
+- **inconclusive** — all scenarios infeasible; loosen constraints.
+
+The UI lives under the Decision engine output: axis dropdown, comma-separated values (with sensible defaults per axis), Run sweep button, sweep-budget meter, results table (gain / diversity / inbreeding / combined risk / match-to-baseline per scenario), and the verdict banner.
+
+API:
+- `POST /api/sensitivity/start` → `{job_id}`
+- `GET /api/sensitivity/status?id=X` → `{percent, message, done, result?}`
+
+Budget cap: the **sum** of per-scenario budgets must be ≤ 1.5B cells (same cap as a single run, applied to the sweep total). Client-side pre-flight blocks oversized sweeps before submit. Server-side validation runs every scenario through `validateRequest` upfront so axis-specific range violations (e.g. h² outside [0,1]) get a per-scenario error message instead of a mid-sweep failure.
+
+Backend in `mvp/sensitivity.go` (~250 lines). Tests in `mvp/sensitivity_test.go` cover validation rejects, baseline-nearest indexing, stable/fragile/inconclusive verdict logic, and the `BestFeasibleCode → BestRiskAdjustedCode` fallback when no constraints are applied.
+
+### Changed
+- Version strings bumped `v0.7.15` → `v0.7.16` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.15] - 2026-05-22
 
 ### Added — Live budget meter under Run

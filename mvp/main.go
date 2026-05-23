@@ -262,6 +262,8 @@ func main() {
 	mux.HandleFunc("/api/simulate/start", startSimulationJobHandler)
 	mux.HandleFunc("/api/simulate/status", simulationJobStatusHandler)
 	mux.HandleFunc("/api/datasets", datasetsAPIHandler)
+	mux.HandleFunc("/api/sensitivity/start", sensitivityStartHandler)
+	mux.HandleFunc("/api/sensitivity/status", sensitivityStatusHandler)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -567,7 +569,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.15 raises the per-run budget cap to 1.5B cells and adds a live budget meter under Run — over-cap configurations are blocked in the browser with the contributing inputs (population, markers, generations, replicates) highlighted, so the user no longer hits an opaque 400 after submit. v0.7.14 enqueues the tracked (histogram) task FIRST in the worker pool so per-generation snapshots start arriving on poll #1; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.16 adds a sensitivity sweep (Issue 09): the same configuration is run across up to 5 values of one axis (heritability, selection percent, or generations horizon) and the best-feasible strategy is compared across scenarios. The recommendation gets a stable/fragile verdict so a single-run number is not mistaken for a stable answer. v0.7.15 raised the per-run budget cap to 1.5B cells and added a live budget meter under Run; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -607,7 +609,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		}
 	}
 	if simulationBudget(req, strategyCount) > 300000000 {
-		notes = append(notes, "Large simulation: v0.7.15 caps the budget at 1.5B cells and uses a worker pool. Production BreedOS should move heavy runs to durable queued workers.")
+		notes = append(notes, "Large simulation: v0.7.16 caps the budget at 1.5B cells (per run AND sum-over-sweep) and uses a worker pool. Production BreedOS should move heavy runs to durable queued workers.")
 	}
 	return notes
 }

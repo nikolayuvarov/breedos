@@ -1041,6 +1041,172 @@ function escapeHtml(s) {
     .replaceAll("'", '&#039;');
 }
 
+// v0.7.16 — sensitivity sweep client. Mirrors the API shape exposed by
+// sensitivity.go. Defaults per axis are chosen to bracket common breeder
+// questions ("what if h² is lower than assumed?", "what if we cut selection
+// intensity?", "what if we only have 10 generations?"). 5 values max because
+// the server caps at sensitivityMaxValues and the table stays readable.
+const SENS_DEFAULT_VALUES = {
+  heritability:      '0.2, 0.35, 0.5, 0.65, 0.8',
+  selection_percent: '5, 10, 15, 20, 30',
+  generations:       '10, 20, 30, 50, 80'
+};
+const SENS_AXIS_LABEL = {
+  heritability:      'h²',
+  selection_percent: 'sel %',
+  generations:       'gens'
+};
+const SENS_AXIS_FORMAT = {
+  heritability:      v => v.toFixed(2),
+  selection_percent: v => v.toFixed(0) + '%',
+  generations:       v => String(Math.round(v))
+};
+let sensRunInFlight = false;
+
+function parseSensValues(text) {
+  return String(text || '')
+    .split(/[,\s]+/)
+    .map(s => s.trim().replace(',', '.'))
+    .filter(s => s.length > 0)
+    .map(s => Number(s))
+    .filter(v => Number.isFinite(v));
+}
+
+function sensitivityCostCells(req, values) {
+  const single = runBudgetCells(req);
+  return single * Math.max(1, values.length);
+}
+
+function updateSensBudgetMeter() {
+  const el = byId('sensBudget');
+  if (!el) return { over: false };
+  const axis = byId('sensAxis') ? byId('sensAxis').value : 'heritability';
+  const values = parseSensValues(byId('sensValues') ? byId('sensValues').value : '');
+  const req = requestFromForm();
+  const sweep = sensitivityCostCells(req, values);
+  const over = sweep > BUDGET_CAP;
+  const warn = !over && sweep > BUDGET_CAP * BUDGET_WARN_FRAC;
+  el.classList.remove('warn', 'over');
+  if (over) el.classList.add('over');
+  else if (warn) el.classList.add('warn');
+  const single = runBudgetCells(req);
+  const formula = `${values.length || 0} scenarios × ${formatCells(single)} cells per run`;
+  let hint;
+  if (values.length === 0) {
+    hint = 'Enter 1–5 axis values.';
+  } else if (values.length > 5) {
+    hint = `Only 5 values per sweep are allowed (got ${values.length}).`;
+  } else if (over) {
+    hint = `Over the ${formatCells(BUDGET_CAP)} cap — reduce number of values, or shrink base run.`;
+  } else if (warn) {
+    hint = `Near the ${formatCells(BUDGET_CAP)} cap.`;
+  } else {
+    hint = `Sum stays within the ${formatCells(BUDGET_CAP)} cap.`;
+  }
+  el.innerHTML = `Sweep budget: <strong>${formatCells(sweep)} cells</strong> <small>${formula}</small><small>${hint}</small>`;
+  const btn = byId('sensRunBtn');
+  if (btn) {
+    if (over || values.length === 0 || values.length > 5 || sensRunInFlight) btn.setAttribute('disabled', 'disabled');
+    else btn.removeAttribute('disabled');
+  }
+  return { over, values };
+}
+
+function setSensStatus(text, cls) {
+  const el = byId('sensStatus');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'status ' + (cls || '');
+}
+
+async function runSensitivitySweep() {
+  if (sensRunInFlight) return;
+  const axis = byId('sensAxis').value;
+  const meter = updateSensBudgetMeter();
+  if (meter.over) {
+    setSensStatus(`Sweep budget exceeds the ${formatCells(BUDGET_CAP)} cap. Reduce number of values or shrink base run.`, 'error');
+    return;
+  }
+  if (!meter.values || meter.values.length === 0) {
+    setSensStatus('Enter at least one axis value (comma-separated).', 'error');
+    return;
+  }
+  sensRunInFlight = true;
+  const btn = byId('sensRunBtn');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting...'; }
+  // Hide previous result so the user doesn't conflate runs.
+  byId('sensVerdict').hidden = true;
+  byId('sensTableWrap').hidden = true;
+  setSensStatus('Starting sweep...', '');
+  try {
+    const startRes = await fetch('/api/sensitivity/start', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({base: requestFromForm(), axis: axis, values: meter.values})
+    });
+    if (!startRes.ok) {
+      const text = await startRes.text();
+      throw new Error(text || `HTTP ${startRes.status}`);
+    }
+    const start = await startRes.json();
+    let job = null;
+    for (;;) {
+      const res = await fetch('/api/sensitivity/status?id=' + encodeURIComponent(start.job_id), {cache: 'no-store'});
+      if (!res.ok) { throw new Error(await res.text() || `HTTP ${res.status}`); }
+      job = await res.json();
+      setSensStatus(`${job.message || 'Running'} — ${job.percent || 0}%`, '');
+      if (btn) btn.textContent = `Sweep ${job.percent || 0}%`;
+      if (job.done) break;
+      await sleep(150);
+    }
+    if (job.error) throw new Error(job.error);
+    if (!job.result) throw new Error('Sweep finished without a result');
+    renderSensResult(axis, job.result);
+    setSensStatus('Sweep complete.', 'ok');
+  } catch (err) {
+    console.error(err);
+    setSensStatus(err.message || String(err), 'error');
+  } finally {
+    sensRunInFlight = false;
+    if (btn) { btn.disabled = false; btn.textContent = originalLabel || 'Run sweep'; }
+    updateSensBudgetMeter();
+  }
+}
+
+function renderSensResult(axis, result) {
+  const verdictEl = byId('sensVerdict');
+  const wrap = byId('sensTableWrap');
+  const body = byId('sensTable');
+  const summary = result.summary || {};
+  const verdict = summary.verdict || 'inconclusive';
+  verdictEl.classList.remove('stable', 'fragile', 'inconclusive');
+  verdictEl.classList.add(verdict);
+  const verdictLabel = verdict.toUpperCase();
+  const notes = Array.isArray(summary.notes) ? summary.notes.join(' ') : '';
+  verdictEl.innerHTML = `<strong>${verdictLabel}</strong> — ${escapeHtml(notes)}`;
+  verdictEl.hidden = false;
+  const fmt = SENS_AXIS_FORMAT[axis] || (v => String(v));
+  const rows = (result.scenarios || []).map(s => {
+    const matchCell = s.best_feasible_code === ''
+      ? '<span class="sens-match-no">infeasible</span>'
+      : (s.baseline_match
+          ? '<span class="sens-match-yes">yes</span>'
+          : `<span class="sens-match-no">no (→ ${escapeHtml(s.best_feasible_code)})</span>`);
+    return '<tr>'
+      + `<td>${fmt(Number(s.axis_value))}</td>`
+      + `<td>${escapeHtml(s.best_feasible_name || s.best_feasible_code || '—')}</td>`
+      + `<td>${signedDelta(s.genetic_gain)}</td>`
+      + `<td>${Number(s.diversity).toFixed(3)}</td>`
+      + `<td>${Number(s.inbreeding).toFixed(3)}</td>`
+      + `<td>${Number(s.combined_risk).toFixed(3)}</td>`
+      + `<td>${matchCell}</td>`
+      + '</tr>';
+  }).join('');
+  body.innerHTML = rows;
+  wrap.hidden = false;
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const runBtn = byId('runBtn');
   if (!runBtn) return;
@@ -1057,8 +1223,24 @@ window.addEventListener('DOMContentLoaded', () => {
     // 'input' fires while typing — keeps the budget meter reactive without
     // waiting for blur. markDirty itself stays on 'change' so the status text
     // doesn't churn on every keystroke.
-    input.addEventListener('input', () => updateBudgetMeter());
+    input.addEventListener('input', () => {
+      updateBudgetMeter();
+      updateSensBudgetMeter();
+    });
   });
   updateBudgetMeter();
+  // v0.7.16 sensitivity panel.
+  const sensAxis = byId('sensAxis');
+  const sensValues = byId('sensValues');
+  const sensRunBtn = byId('sensRunBtn');
+  if (sensAxis && sensValues && sensRunBtn) {
+    sensAxis.addEventListener('change', () => {
+      sensValues.value = SENS_DEFAULT_VALUES[sensAxis.value] || '';
+      updateSensBudgetMeter();
+    });
+    sensValues.addEventListener('input', updateSensBudgetMeter);
+    sensRunBtn.addEventListener('click', runSensitivitySweep);
+    updateSensBudgetMeter();
+  }
   setStatus('Ready. Press Run simulation to calculate.', '');
 });
