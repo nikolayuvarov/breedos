@@ -70,9 +70,13 @@ type SensitivityResult struct {
 	Summary   SensitivitySummary    `json:"summary"`
 }
 
+// Percent is float64 so the client can show fractional progress while a
+// single scenario is mid-flight. On prod (single-core VPS) one scenario
+// can take 15–30 seconds; without sub-percent granularity the meter
+// looks frozen until the scenario boundary.
 type SensitivityJobStatus struct {
 	JobID   string             `json:"job_id"`
-	Percent int                `json:"percent"`
+	Percent float64            `json:"percent"`
 	Message string             `json:"message"`
 	Done    bool               `json:"done"`
 	Error   string             `json:"error,omitempty"`
@@ -83,7 +87,7 @@ type sensJob struct {
 	ID        string
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Percent   int
+	Percent   float64
 	Message   string
 	Done      bool
 	Error     string
@@ -198,7 +202,7 @@ func createSensJob() string {
 	return id
 }
 
-func updateSensJob(id string, percent int, message string, result *SensitivityResult, errMsg string, done bool) {
+func updateSensJob(id string, percent float64, message string, result *SensitivityResult, errMsg string, done bool) {
 	sensJobStore.Lock()
 	defer sensJobStore.Unlock()
 	job, ok := sensJobStore.Jobs[id]
@@ -231,12 +235,33 @@ func runSensitivityJob(jobID string, req SensitivityRequest) {
 		scen := req.Base
 		normalizeRequest(&scen)
 		apply(&scen, v)
-		updateSensJob(jobID, 100*i/n,
-			fmt.Sprintf("scenario %d/%d: %s=%g", i+1, n, req.Axis, v),
-			nil, "", false)
+		// Outer progress at scenario boundary: i scenarios are done, current
+		// is about to start. Inner ticks below smoothly fill the gap.
+		baseLabel := fmt.Sprintf("scenario %d/%d: %s=%g", i+1, n, req.Axis, v)
+		updateSensJob(jobID, 100.0*float64(i)/float64(n), baseLabel+" — 0%", nil, "", false)
+
+		// v0.7.17: propagate inner progress so the bar moves continuously.
+		// Inner pct (0–100 of one scenario) maps to outer pct
+		// (i*100 + inner) / n across the whole sweep. We keep the simulate
+		// engine's own message — it has more detail than we'd synthesise here.
+		scenIdx := i
+		scenLabel := baseLabel
+		innerProgress := func(innerPct int, innerMsg string) {
+			if innerPct < 0 {
+				innerPct = 0
+			} else if innerPct > 100 {
+				innerPct = 100
+			}
+			outer := (float64(scenIdx)*100.0 + float64(innerPct)) / float64(n)
+			msg := scenLabel + fmt.Sprintf(" — %d%%", innerPct)
+			if innerMsg != "" {
+				msg += " (" + innerMsg + ")"
+			}
+			updateSensJob(jobID, outer, msg, nil, "", false)
+		}
 		resp, err := runSimulationWithCallbacks(scen,
-			func(int, string) {}, // ignore inner progress
-			func(AFSSnapshot) {}) // ignore snapshots for sweep — too noisy
+			innerProgress,
+			func(AFSSnapshot) {}) // snapshots ignored on sweep — chart noise.
 		if err != nil {
 			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g) failed: %v", i+1, req.Axis, v, err), true)
 			return

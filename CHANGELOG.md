@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.17] - 2026-05-24
+
+### Fixed — Sensitivity sweep "looked frozen" on slow prod
+
+v0.7.16 passed a no-op progress callback into the inner simulation, so the
+percent bar in the sensitivity sweep panel sat at one value (e.g. 0%, then
+20%, then 40%, ...) for the entire duration of one scenario. On prod
+(single-core VPS, ~15–30 s per scenario) this read as "frozen" to the
+operator who reported the issue with a screenshot during a live sweep.
+
+**Fix:**
+
+- Propagate the inner-simulation progress callback into the sweep so each
+  scenario fills its own 20% slice continuously. Outer percent =
+  `(scenario_index * 100 + inner_percent) / num_scenarios`.
+- Move `Percent` from `int` to `float64` in `SensitivityJobStatus` and the
+  in-memory job store so the displayed value can be e.g. `27.4%` instead of
+  rounding away the sub-scenario progress.
+- Frontend formats one decimal place mid-run (`27.4%`), rounds to integer
+  on completion (`100%`).
+- Inner runner's own message string (`parallel run: 334/600 strategy-
+  generations complete; ...`) is appended in parentheses so the operator
+  sees that work is happening inside the scenario, not just at boundaries.
+
+### Changed
+- Version strings bumped `v0.7.16` → `v0.7.17` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.16] - 2026-05-23
 
 ### Added — Sensitivity sweep (Issue 09)

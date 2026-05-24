@@ -1155,9 +1155,17 @@ async function runSensitivitySweep() {
       const res = await fetch('/api/sensitivity/status?id=' + encodeURIComponent(start.job_id), {cache: 'no-store'});
       if (!res.ok) { throw new Error(await res.text() || `HTTP ${res.status}`); }
       job = await res.json();
-      setSensStatus(`${job.message || 'Running'} — ${job.percent || 0}%`, '');
-      if (btn) btn.textContent = `Sweep ${job.percent || 0}%`;
+      // v0.7.17 — backend returns float percent. Show one decimal while
+      // mid-run so the user sees the bar moving on slow prod (single core),
+      // round to integer on completion to avoid 99.9 stutter.
+      const pct = Number(job.percent) || 0;
+      const pctStr = job.done || pct >= 99.95 ? Math.round(pct).toString() : pct.toFixed(1);
+      setSensStatus(`${job.message || 'Running'} — ${pctStr}%`, '');
+      if (btn) btn.textContent = `Sweep ${pctStr}%`;
       if (job.done) break;
+      // 150ms ≈ 6 polls/sec. Backend cost is a single map lookup; this is
+      // dominated by inner-progress tick rate (~30-100 Hz during a scenario)
+      // not by polling cadence.
       await sleep(150);
     }
     if (job.error) throw new Error(job.error);
