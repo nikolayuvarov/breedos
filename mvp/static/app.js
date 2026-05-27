@@ -91,7 +91,16 @@ function requestFromForm() {
     max_rare_useful_loss: Math.trunc(numberValue('max_rare_useful_loss')),
     min_genetic_gain: numberValue('min_genetic_gain'),
     min_effective_parents: Math.trunc(numberValue('min_effective_parents')),
-    max_combined_risk: numberValue('max_combined_risk')
+    max_combined_risk: numberValue('max_combined_risk'),
+    // v0.7.18 — Issue 13/14/16. NGT regulatory context. All fields optional;
+    // unset values force "unclassifiable" on the backend.
+    ngt: {
+      target_trait_class: (byId('ngt_target_trait_class') && byId('ngt_target_trait_class').value) || '',
+      donor_source:       (byId('ngt_donor_source')       && byId('ngt_donor_source').value)       || '',
+      patent_id:          (byId('ngt_patent_id')          && byId('ngt_patent_id').value)          || '',
+      licensing_status:   (byId('ngt_licensing_status')   && byId('ngt_licensing_status').value)   || '',
+      notes:              (byId('ngt_notes')              && byId('ngt_notes').value)              || ''
+    }
   };
 }
 
@@ -330,7 +339,10 @@ function renderAll(data, prev) {
   drawMetricChart('chart_lost', 'legend_lost', data, prev, 'rare_useful_lost', 'Rare useful loci lost');
   drawMetricChart('chart_fixed', 'legend_fixed', data, prev, 'fixed_loci', 'Fixed loci');
   drawParetoChart('chart_pareto', data);
-  renderEditTable(data.candidate_edits || []);
+  // v0.7.18 — pass set-level NGT classification to both renderers.
+  const ngt = (data.decision && data.decision.ngt) || null;
+  renderNGTRegulatoryCard(ngt, data.request);
+  renderEditTable(data.candidate_edits || [], ngt);
   renderStrategyTable(data.strategies || [], prev);
 }
 
@@ -434,11 +446,15 @@ function renderSummary(data, prev) {
   `).join('');
 }
 
-function renderEditTable(edits) {
+function renderEditTable(edits, ngt) {
   if (!edits.length) {
-    byId('editTable').innerHTML = '<tr><td colspan="7">No candidate edits returned.</td></tr>';
+    byId('editTable').innerHTML = '<tr><td colspan="8">No candidate edits returned.</td></tr>';
     return;
   }
+  // v0.7.18 — Issue 14. The NGT classification is set-level (one verdict
+  // per run), so every row shows the same badge. The badge stays meaningful
+  // because it tells the user "this whole edit set falls into category X".
+  const badge = ngtBadgeHtml(ngt);
   byId('editTable').innerHTML = edits.map(e => `
     <tr>
       <td>${e.rank}</td>
@@ -448,8 +464,70 @@ function renderEditTable(edits) {
       <td>${fmt(e.expected_gain_score)}</td>
       <td>${escapeHtml(e.diversity_risk)}</td>
       <td>${escapeHtml(e.decision)}</td>
+      <td>${badge}</td>
     </tr>
   `).join('');
+}
+
+// v0.7.18 — Issue 14. Renders a colour-coded NGT badge from an
+// NGTClassification or returns an em-dash placeholder when absent.
+function ngtBadgeHtml(ngt) {
+  if (!ngt || !ngt.category) return '<span class="ngt-badge ngt-unclassifiable" title="No edits planned or NGT context not set.">—</span>';
+  const cls = ngt.category === 'NGT-1' ? 'ngt-1'
+            : ngt.category === 'NGT-2' ? 'ngt-2'
+            : 'ngt-unclassifiable';
+  const tooltipBits = [];
+  (ngt.reasons || []).forEach(r => tooltipBits.push('• ' + r));
+  (ngt.disqualifiers || []).forEach(d => tooltipBits.push('✗ ' + d));
+  if (ngt.confidence_note) tooltipBits.push('— ' + ngt.confidence_note);
+  return `<span class="ngt-badge ${cls}" tabindex="0" title="${escapeHtml(tooltipBits.join('\n'))}">${escapeHtml(ngt.category)}</span>`;
+}
+
+// v0.7.18 — Issue 15. Regulatory card rendered above the candidate-edit
+// table. Shows the category headline, reasons, disqualifiers, optional
+// patent-declaration warning (Issue 16), and the verbatim disclaimer.
+function renderNGTRegulatoryCard(ngt, request) {
+  const el = byId('ngtRegulatoryCard');
+  if (!el) return;
+  if (!ngt) {
+    el.hidden = true;
+    return;
+  }
+  const cls = ngt.category === 'NGT-1' ? 'ngt-1'
+            : ngt.category === 'NGT-2' ? 'ngt-2'
+            : 'ngt-unclassifiable';
+  el.className = 'ngt-regulatory-card ' + cls;
+  const headline = ngt.category === 'NGT-1'
+    ? 'NGT-1 — equivalent to conventionally bred; exempt from GMO legislation under the new EU framework.'
+    : ngt.category === 'NGT-2'
+      ? 'NGT-2 — full GMO authorisation, traceability, and labelling required.'
+      : 'Unclassifiable — set target trait class and donor source above to classify.';
+  const reasonsList = (ngt.reasons || []).map(r => '<li>' + escapeHtml(r) + '</li>').join('');
+  const disqList = (ngt.disqualifiers || []).map(d => '<li>' + escapeHtml(d) + '</li>').join('');
+  const downstream = ngt.category === 'NGT-1'
+    ? 'Downstream: registration in the new EU variety framework, comparable to conventionally bred varieties. Labelling required on seed and other reproductive material; not on the variety itself. Offspring requires no further checks. Patent rights must be declared at registration.'
+    : ngt.category === 'NGT-2'
+      ? 'Downstream: full GMO authorisation procedure, traceability through the supply chain, labelling on the variety and downstream products, ongoing post-market monitoring.'
+      : 'Downstream: unknown until classification is settled.';
+  // Patent warning (Issue 16): only when classified NGT-1 and the user did
+  // not fill the patent_id field.
+  const patentMissing = ngt.category === 'NGT-1'
+    && request && request.ngt
+    && (!request.ngt.patent_id || !request.ngt.patent_id.trim());
+  const warning = patentMissing
+    ? '<div class="ngt-patent-warning">⚠ NGT-1 registration will require explicit patent declaration. None recorded for this run. See "Patent / licensing declaration" in the form.</div>'
+    : '';
+  el.innerHTML = `
+    <h3>${escapeHtml(headline)}</h3>
+    <div class="ngt-section-title">Reasons</div>
+    <ul>${reasonsList || '<li>—</li>'}</ul>
+    ${disqList ? `<div class="ngt-section-title">Disqualifiers</div><ul>${disqList}</ul>` : ''}
+    <div class="ngt-section-title">Downstream implications</div>
+    <p style="margin:0">${escapeHtml(downstream)}</p>
+    ${warning}
+    <div class="ngt-disclaimer">${escapeHtml(ngt.confidence_note || '')}</div>
+  `;
+  el.hidden = false;
 }
 
 function renderStrategyTable(strategies, prev) {

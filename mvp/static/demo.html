@@ -22,7 +22,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.17 — sensitivity progress polish</div>
+      <div class="kicker">MVP v0.7.18 — EU NGT regulatory layer</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -208,6 +208,65 @@
             <input id="crispr_intro_percent" type="number" min="0" max="100" step="0.5" value="8">
           </div>
 
+          <details class="advanced-section">
+            <summary><strong>EU NGT regulatory context</strong> <small>(optional — fills the regulatory section of the decision report)</small></summary>
+            <div class="field">
+              <label>
+                <span>Target trait class <span class="tip" tabindex="0" data-tip="Category of the trait the edit is meant to confer. The EU NGT regulation auto-excludes herbicide_tolerance and insecticidal from NGT-1 (Category 1, deregulated). Productivity / quality / disease_resistance are eligible for NGT-1 if the other rules hold.">?</span></span>
+                <span>NGT-1 rule</span>
+              </label>
+              <select id="ngt_target_trait_class">
+                <option value="">— not set (unclassifiable) —</option>
+                <option value="productivity">productivity</option>
+                <option value="quality">quality</option>
+                <option value="disease_resistance">disease resistance</option>
+                <option value="herbicide_tolerance">herbicide tolerance (excludes NGT-1)</option>
+                <option value="insecticidal">insecticidal (excludes NGT-1)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>
+                <span>Donor source <span class="tip" tabindex="0" data-tip="Origin of the edited allele. cross_species introduces foreign DNA and disqualifies NGT-1. none / same_species / same_gene_pool are NGT-1 eligible.">?</span></span>
+                <span>NGT-1 rule</span>
+              </label>
+              <select id="ngt_donor_source">
+                <option value="">— not set (unclassifiable) —</option>
+                <option value="none">none</option>
+                <option value="same_species">same species</option>
+                <option value="same_gene_pool">same gene pool</option>
+                <option value="cross_species">cross species (excludes NGT-1)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>
+                <span>Patent / licensing declaration <span class="tip" tabindex="0" data-tip="Optional. EU NGT-1 registration requires declaring patent rights. Record patent ID, licensing status, and notes here so they propagate into the JSON export. Per-run declaration in this MVP (not per-edit).">?</span></span>
+                <span>Issue 16</span>
+              </label>
+              <input id="ngt_patent_id" type="text" placeholder="patent number or 'none'" maxlength="200">
+            </div>
+            <div class="field">
+              <label>
+                <span>Licensing status</span>
+                <span>Issue 16</span>
+              </label>
+              <select id="ngt_licensing_status">
+                <option value="">— not set —</option>
+                <option value="none">none</option>
+                <option value="licensed-in">licensed-in</option>
+                <option value="licensed-out">licensed-out</option>
+                <option value="under-negotiation">under negotiation</option>
+                <option value="unknown">unknown</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>
+                <span>Notes (optional)</span>
+                <span></span>
+              </label>
+              <input id="ngt_notes" type="text" placeholder="up to 500 chars" maxlength="500">
+            </div>
+          </details>
+
           <details class="constraints-group">
             <summary><strong>Program constraints</strong> <span class="constraints-hint">(optional — 0 = no constraint)</span></summary>
             <p class="constraints-explainer">Hard caps from your breeding program. Strategies that fail any active constraint are marked infeasible; the decision report highlights the best feasible strategy separately.</p>
@@ -354,11 +413,12 @@
           <p class="note">
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
+          <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Rank</th><th>Locus</th><th>Effect</th><th>Allele freq.</th><th>Gain score</th><th>Risk</th><th>Decision</th>
+                  <th>Rank</th><th>Locus</th><th>Effect</th><th>Allele freq.</th><th>Gain score</th><th>Risk</th><th>Decision</th><th>NGT</th>
                 </tr>
               </thead>
               <tbody id="editTable"></tbody>

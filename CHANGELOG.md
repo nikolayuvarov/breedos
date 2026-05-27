@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.18] - 2026-05-24
+
+### Added — EU NGT regulatory classification layer (Issues 13–16)
+
+The EU NGT Regulation (Council adopted 2026-04-21, applies from mid-2028)
+splits gene-edited plants into two categories with very different downstream
+costs. BreedOS now classifies every planned edit set in real time so the
+operator sees the category implication *before* committing to a CRISPR
+strategy.
+
+**Issue 13 — classification engine** (`mvp/ngt_classify.go`, ~170 lines + 13 tests):
+classifies under the **20/20 rule** (max 20 modifications, each insertion ≤ 20 bp)
+plus auto-exclusions (`herbicide_tolerance` and `insecticidal` trait classes
+disqualify NGT-1) and donor-source rules (`cross_species` introduces foreign
+DNA → disqualifies). Output: `NGT-1` | `NGT-2` | `unclassifiable` (when
+inputs are missing). Every result carries a verbatim "Not legal advice"
+disclaimer.
+
+**Issue 14 — candidate-edit badge**: every row in the CRISPR edit candidates
+table now ends with a colour-coded badge (green NGT-1, orange NGT-2, grey
+unclassifiable). Hover/focus tooltip shows reasons, disqualifiers, and the
+disclaimer.
+
+**Issue 15 — Regulatory card in the Decision Report area**: a new card
+above the candidate-edits table renders the category headline, a list of
+reasons, disqualifiers (if any), one paragraph of downstream implications
+(registration path, labelling, traceability), and the disclaimer.
+
+**Issue 16 — patent / licensing declaration fields**: optional run-level
+fields (`patent_id`, `licensing_status`, `notes`) collapsible inside the
+CRISPR form section. When the run is classified NGT-1 *and* `patent_id` is
+empty, the Regulatory card surfaces a warning that NGT-1 registration will
+require an explicit patent declaration. All fields round-trip into the JSON
+export so they propagate to a registration filing.
+
+Schema changes (additive only):
+
+- `SimRequest.NGT` (optional `NGTContext` with `target_trait_class`,
+  `donor_source`, `patent_id`, `licensing_status`, `notes`).
+- `DecisionSummary.NGT` (optional `*NGTClassification` with `category`,
+  `reasons`, `disqualifiers`, `confidence_note`).
+
+Backward compatibility: runs without `req.NGT` produce the existing API
+shape unchanged (omitempty); UI hides the Regulatory card and shows a
+"—" placeholder badge.
+
+### Changed
+- Version strings bumped `v0.7.17` → `v0.7.18` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.17] - 2026-05-24
 
 ### Fixed — Sensitivity sweep "looked frozen" on slow prod

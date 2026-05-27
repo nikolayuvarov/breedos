@@ -58,6 +58,9 @@ type SimRequest struct {
 	// else first configured strategy. A non-empty value is taken as a strategy code
 	// (e.g. "aggressive"); if not present in the run's strategy set, falls back to auto.
 	TrackedStrategy string `json:"tracked_strategy"`
+	// v0.7.18 — Issue 13 EU NGT regulatory context for candidate-edit classification.
+	// Optional: when zero-valued, the resulting classification is "unclassifiable".
+	NGT NGTContext `json:"ngt,omitempty"`
 }
 
 type SimResponse struct {
@@ -88,6 +91,11 @@ type DecisionSummary struct {
 	HonestyBanner        string       `json:"honesty_banner"`
 	Limitations          []string     `json:"limitations"`
 	WhatCouldBeWrong     []string     `json:"what_could_be_wrong"`
+	// v0.7.18 — Issue 13/15. NGT regulatory classification of the planned edit
+	// set. Populated only when at least one edit is planned (CrisprEnabled and
+	// CrisprEdits > 0). Carries the verdict + reasons + disqualifiers +
+	// "Not legal advice" disclaimer.
+	NGT *NGTClassification `json:"ngt,omitempty"`
 }
 
 type Tradeoff struct {
@@ -546,6 +554,13 @@ func runSimulationWithCallbacks(req SimRequest, progress progressFunc, snapshot 
 	annotateDecisionScores(results)
 	annotateFeasibility(req, results, baseDiversity)
 	decision := buildDecisionSummary(req, results, baseDiversity)
+	// v0.7.18 — Issue 13/15. Classify the planned edit set under the EU NGT
+	// regulation. Only attach when the user actually planned edits; otherwise
+	// the field is omitted from the JSON (omitempty).
+	if req.CrisprEnabled && req.CrisprEdits > 0 && len(candidates) > 0 {
+		c := ClassifyEditSet(candidates, req.NGT)
+		decision.NGT = &c
+	}
 	reportProgress(progress, 98, "building response")
 	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity, datasetMeta)}, nil
 }
@@ -569,7 +584,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.17 propagates per-generation progress through the sensitivity sweep so the % bar moves continuously while one scenario runs (previously stayed at one value for the whole scenario, looked frozen on slow prod). Percent is now fractional. v0.7.16 added the sensitivity sweep itself (Issue 09): same configuration run across up to 5 values of one axis, stable/fragile verdict. v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.18 adds the EU NGT regulatory layer (Issues 13–16): every planned CRISPR edit set is classified under the 20/20 rule + trait-class exclusions + donor-source rules into NGT-1 (deregulated), NGT-2 (full GMO authorisation), or unclassifiable. A new Regulatory card explains downstream implications; a per-row badge appears in the candidate-edits table; the optional patent-declaration fields propagate into the JSON export. v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
