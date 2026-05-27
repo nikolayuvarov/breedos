@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.19] - 2026-05-28
+
+### Fixed — NGT Path (ii) gene-pool insertion check (Issue 32 errata to v0.7.18)
+
+The v0.7.18 NGT pack was audited against the final EU regulation text
+(Council adoption 2026-04-21, applies from mid-2028) and one correctness gap
+was found: Annex I distinguishes two NGT-1 paths inside the 20-modification
+envelope —
+
+- **Path (i):** deletions / inversions of any size, OR insertions /
+  substitutions of ≤ 20 arbitrary nucleotides; anywhere in the genome.
+- **Path (ii):** any-sized contiguous DNA from the breeder's gene pool, but
+  only if no endogenous gene is disrupted.
+
+The v0.7.18 classifier did not encode the "no endogenous gene is disrupted"
+clause and treated `donor_source = same_species | same_gene_pool` as NGT-1
+eligible without that confirmation. This was a **silent false-positive in
+the safe direction** — operator could be told "NGT-1" (deregulated) for a
+case that should be NGT-2 (full GMO authorisation). For a planning aid this
+is the worst failure mode.
+
+**Fix:**
+
+- `NGTContext` gains two new optional fields:
+  - `variant_type`: `snv_or_small` (default) / `inversion` / `deletion` /
+    `gene_pool_insertion`. Empty defaults to `snv_or_small` for v0.7.18
+    payload compatibility.
+  - `endogenous_gene_interrupted` (`*bool`): `nil` = not declared,
+    `false` = operator confirmed no endogenous gene disrupted, `true` =
+    disqualifies NGT-1. Mandatory for `variant_type = gene_pool_insertion`.
+- `ClassifyEditSet` refactored to branch Path (i) vs Path (ii) explicitly.
+  Path (ii) without `endogenous_gene_interrupted` set returns
+  `unclassifiable` (never silently grants NGT-1).
+- Path (ii) with `donor_source` other than `same_species` / `same_gene_pool`
+  is rejected with an explicit disqualifier.
+- Confidence-note disclaimer updated to cite Annex I and the 2026-04-21
+  Council adoption date verbatim.
+- Donor-source tooltip updated with the Annex I gene-pool definition.
+
+UI: form gains a `variant_type` select inside the NGT collapsible. When
+`gene_pool_insertion` is chosen, an additional `endogenous_gene_interrupted`
+select becomes visible (hidden for Path (i) cases to keep the form lean).
+
+9 new unit tests cover: disclaimer cites 2026-04-21; backward-compat default
+to `snv_or_small`; invalid variant_type → unclassifiable; inversion / deletion
+pass; Path (ii) unconfirmed → unclassifiable; Path (ii) interrupted → NGT-2;
+Path (ii) clear → NGT-1; Path (ii) with `donor_source=none` fails; Path (ii)
+with `donor_source=cross_species` fails twice. Full suite: 22 NGT tests pass
+(13 pre-existing + 9 new); `go test ./...` clean.
+
+### Changed
+- Version strings bumped `v0.7.18` → `v0.7.19` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.18] - 2026-05-24
 
 ### Added — EU NGT regulatory classification layer (Issues 13–16)

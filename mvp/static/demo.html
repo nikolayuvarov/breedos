@@ -22,7 +22,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.18 — EU NGT regulatory layer</div>
+      <div class="kicker">MVP v0.7.19 — NGT Path (ii) gene-pool insertion check</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -226,15 +226,39 @@
             </div>
             <div class="field">
               <label>
-                <span>Donor source <span class="tip" tabindex="0" data-tip="Origin of the edited allele. cross_species introduces foreign DNA and disqualifies NGT-1. none / same_species / same_gene_pool are NGT-1 eligible.">?</span></span>
+                <span>Donor source <span class="tip" tabindex="0" data-tip="Origin of the edited allele. Annex I defines the breeder's gene pool as DNA from the same species or any species capable of being cross-bred (including via advanced breeding techniques). cross_species introduces foreign DNA and disqualifies NGT-1.">?</span></span>
                 <span>NGT-1 rule</span>
               </label>
               <select id="ngt_donor_source">
                 <option value="">— not set (unclassifiable) —</option>
-                <option value="none">none</option>
+                <option value="none">none (no donor DNA — Path (i))</option>
                 <option value="same_species">same species</option>
-                <option value="same_gene_pool">same gene pool</option>
+                <option value="same_gene_pool">same gene pool (cross-breedable)</option>
                 <option value="cross_species">cross species (excludes NGT-1)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>
+                <span>Variant type <span class="tip" tabindex="0" data-tip="Annex I distinguishes two NGT-1 paths. Path (i): SNV / small insert (≤20 nt) / deletion / inversion, anywhere in genome. Path (ii): any-size contiguous DNA from the breeder's gene pool, only if no endogenous gene is disrupted. Default is snv_or_small (Path (i)).">?</span></span>
+                <span>Annex I path</span>
+              </label>
+              <select id="ngt_variant_type">
+                <option value="">— default: snv_or_small (Path (i)) —</option>
+                <option value="snv_or_small">SNV or small insert ≤ 20 nt (Path (i))</option>
+                <option value="inversion">inversion of any size (Path (i))</option>
+                <option value="deletion">deletion of any size (Path (i))</option>
+                <option value="gene_pool_insertion">gene-pool insertion (Path (ii))</option>
+              </select>
+            </div>
+            <div class="field" id="ngt_endogenous_gene_field" hidden>
+              <label>
+                <span>Endogenous gene interrupted? <span class="tip" tabindex="0" data-tip="REQUIRED for Path (ii) gene-pool insertions. Annex I: 'shall not disrupt any endogenous genes'. If you cannot confirm this, the classifier returns 'unclassifiable' and the run will NOT be granted NGT-1.">?</span></span>
+                <span>Path (ii) rule</span>
+              </label>
+              <select id="ngt_endogenous_gene_interrupted">
+                <option value="">— not declared (unclassifiable) —</option>
+                <option value="false">no — no endogenous gene disrupted</option>
+                <option value="true">yes — at least one endogenous gene disrupted</option>
               </select>
             </div>
             <div class="field">

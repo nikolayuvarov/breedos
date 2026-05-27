@@ -94,14 +94,42 @@ function requestFromForm() {
     max_combined_risk: numberValue('max_combined_risk'),
     // v0.7.18 — Issue 13/14/16. NGT regulatory context. All fields optional;
     // unset values force "unclassifiable" on the backend.
-    ngt: {
-      target_trait_class: (byId('ngt_target_trait_class') && byId('ngt_target_trait_class').value) || '',
-      donor_source:       (byId('ngt_donor_source')       && byId('ngt_donor_source').value)       || '',
-      patent_id:          (byId('ngt_patent_id')          && byId('ngt_patent_id').value)          || '',
-      licensing_status:   (byId('ngt_licensing_status')   && byId('ngt_licensing_status').value)   || '',
-      notes:              (byId('ngt_notes')              && byId('ngt_notes').value)              || ''
-    }
+    // v0.7.19 — Issue 32. Added variant_type and endogenous_gene_interrupted
+    // to encode the Annex I Path (i) vs Path (ii) split.
+    ngt: ngtContextFromForm()
   };
+}
+
+// v0.7.19 — Issue 32. Collects NGT context fields and serialises
+// endogenous_gene_interrupted as the JSON values true/false/null so the
+// Go *bool unmarshal handles "unset" correctly.
+function ngtContextFromForm() {
+  const out = {
+    target_trait_class: (byId('ngt_target_trait_class') && byId('ngt_target_trait_class').value) || '',
+    donor_source:       (byId('ngt_donor_source')       && byId('ngt_donor_source').value)       || '',
+    variant_type:       (byId('ngt_variant_type')       && byId('ngt_variant_type').value)       || '',
+    patent_id:          (byId('ngt_patent_id')          && byId('ngt_patent_id').value)          || '',
+    licensing_status:   (byId('ngt_licensing_status')   && byId('ngt_licensing_status').value)   || '',
+    notes:              (byId('ngt_notes')              && byId('ngt_notes').value)              || ''
+  };
+  const egiEl = byId('ngt_endogenous_gene_interrupted');
+  if (egiEl) {
+    const v = egiEl.value;
+    if (v === 'true')  out.endogenous_gene_interrupted = true;
+    if (v === 'false') out.endogenous_gene_interrupted = false;
+    // empty string ⇒ omit field so backend sees nil pointer.
+  }
+  return out;
+}
+
+// v0.7.19 — show the endogenous-gene-interrupted question only when the
+// operator picks variant_type = gene_pool_insertion. The classifier requires
+// it for Path (ii); hiding it for Path (i) keeps the form lean.
+function updateNGTEndogenousFieldVisibility() {
+  const vt = byId('ngt_variant_type');
+  const wrap = byId('ngt_endogenous_gene_field');
+  if (!vt || !wrap) return;
+  wrap.hidden = vt.value !== 'gene_pool_insertion';
 }
 
 function setFormValues(values) {
@@ -1315,6 +1343,13 @@ window.addEventListener('DOMContentLoaded', () => {
     });
   });
   updateBudgetMeter();
+  // v0.7.19 — Issue 32. Show / hide the endogenous-gene-interrupted field
+  // based on variant_type so the Path (ii) question only appears when relevant.
+  const vt = byId('ngt_variant_type');
+  if (vt) {
+    vt.addEventListener('change', updateNGTEndogenousFieldVisibility);
+    updateNGTEndogenousFieldVisibility();
+  }
   // v0.7.16 sensitivity panel.
   const sensAxis = byId('sensAxis');
   const sensValues = byId('sensValues');
