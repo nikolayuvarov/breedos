@@ -71,6 +71,13 @@ func loadDataset(name string) (*loadedDataset, error) {
 }
 
 func loadDatasetUncached(name string) (*loadedDataset, error) {
+	// v0.7.22 — Issue 19. The Holstein-synthetic dataset is generated in
+	// memory from a fixed-seed RNG (the request's seed is applied later
+	// during subsampleDataset). Reasonable defaults: 500 founders × 2000
+	// markers, then subsampled to the request's N × M.
+	if name == "holstein_synthetic" {
+		return synthHolsteinFounders(500, 2000, holsteinSynthGenSeed()), nil
+	}
 	// 1) External file next to the running binary, in ./data/<name>.csv.
 	//    This is the production layout: deploy_breedos.sh uploads large CSVs
 	//    here instead of embedding them in the binary.

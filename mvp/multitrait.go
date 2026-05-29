@@ -36,6 +36,7 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
 )
 
 // validateMultiTraitRequest checks the new schema fields before the
@@ -338,6 +339,78 @@ func simulateMultiTraitStrategy(req SimRequest, cfg strategyConfig, pop []organi
 	}
 }
 
+// v0.7.22 — Issue 23. N-D Pareto dominance. Generalises the single-trait
+// dominates() (5 dimensions on FinalStats) by adding one dimension per
+// trait gain. Bigger trait gain = better. Single-trait gain on `Final`
+// is left alone; this function looks at PerTraitMetrics directly.
+//
+// "a dominates b" iff: a is ≥ on every dimension AND strictly > on at
+// least one. Tolerance 1e-9 for floating-point equality.
+func multiTraitDominates(a, b StrategyResult, traitCount int) bool {
+	const tol = 1e-9
+	betterOrEqual := true
+	strictlyBetter := false
+	gainAt := func(s StrategyResult, t int) float64 {
+		if t >= len(s.PerTraitMetrics) || len(s.PerTraitMetrics[t]) == 0 {
+			return 0
+		}
+		return s.PerTraitMetrics[t][len(s.PerTraitMetrics[t])-1].GeneticGain
+	}
+	for t := 0; t < traitCount; t++ {
+		aT, bT := gainAt(a, t), gainAt(b, t)
+		if aT < bT-tol {
+			betterOrEqual = false
+			break
+		}
+		if aT > bT+tol {
+			strictlyBetter = true
+		}
+	}
+	if !betterOrEqual {
+		return false
+	}
+	// Non-trait dimensions: higher diversity better; lower inbreeding /
+	// Pdiv / Prare better.
+	if a.Final.Diversity < b.Final.Diversity-tol {
+		return false
+	}
+	if a.Final.Inbreeding > b.Final.Inbreeding+tol {
+		return false
+	}
+	if a.Final.ProbabilityDiversityCollapse > b.Final.ProbabilityDiversityCollapse+tol {
+		return false
+	}
+	if a.Final.ProbabilityRareUsefulLoss > b.Final.ProbabilityRareUsefulLoss+tol {
+		return false
+	}
+	if a.Final.Diversity > b.Final.Diversity+tol ||
+		a.Final.Inbreeding < b.Final.Inbreeding-tol ||
+		a.Final.ProbabilityDiversityCollapse < b.Final.ProbabilityDiversityCollapse-tol ||
+		a.Final.ProbabilityRareUsefulLoss < b.Final.ProbabilityRareUsefulLoss-tol {
+		strictlyBetter = true
+	}
+	return strictlyBetter
+}
+
+// annotateMultiTraitPareto overwrites ParetoOptimal flags using N-D
+// dominance — replaces the single-trait result of annotateDecisionScores.
+func annotateMultiTraitPareto(results []StrategyResult, traitCount int) {
+	for i := range results {
+		pareto := true
+		for j := range results {
+			if i == j {
+				continue
+			}
+			if multiTraitDominates(results[j], results[i], traitCount) {
+				pareto = false
+				break
+			}
+		}
+		results[i].ParetoOptimal = pareto
+		results[i].Final.ParetoOptimal = pareto
+	}
+}
+
 // runMultiTraitSimulation is the multi-trait entry point. Mirrors
 // runSimulationWithCallbacks but uses the multi-trait simulator throughout.
 func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot snapshotFunc) (SimResponse, error) {
@@ -352,6 +425,7 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 	rng := rand.New(rand.NewSource(req.Seed))
 
 	var initial []organism
+	var datasetMeta *loadedDataset
 	if datasetSelected(req.Dataset) {
 		ds, err := loadDataset(req.Dataset)
 		if err != nil {
@@ -360,6 +434,7 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		ds = subsampleDataset(ds, req.PopulationSize, req.Markers, rng)
 		req.PopulationSize = len(ds.individuals)
 		req.Markers = ds.markerCount
+		datasetMeta = ds
 		initial = clonePopulation(ds.individuals)
 	} else {
 		initial = makeInitialPopulation(req.PopulationSize, req.Markers, rng)
@@ -411,6 +486,11 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		results = append(results, agg)
 	}
 	annotateDecisionScores(results)
+	// v0.7.22 — Issue 23. Overwrite the single-trait Pareto annotation
+	// from annotateDecisionScores with N-D dominance that includes per-
+	// trait gains. The frontend chart projects onto a 2D plane chosen by
+	// the user, but the non-dominance outline reflects full N-D dominance.
+	annotateMultiTraitPareto(results, T)
 	annotateFeasibility(req, results, baseDiversity)
 	decision := buildDecisionSummary(req, results, baseDiversity)
 	if req.CrisprEnabled && req.CrisprEdits > 0 && len(candidates) > 0 {
@@ -434,9 +514,28 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		}
 		break
 	}
+	// v0.7.22 — Issue 26. Append a plain-English multi-trait trade-off
+	// paragraph to the interpretation. Conditional: only when ≥ 2 traits
+	// are active. The text walks through per-trait gains and notes the
+	// additive-only modelling caveat so the operator doesn't over-trust the
+	// number.
+	if len(req.Traits) >= 2 {
+		var sb []string
+		sb = append(sb, fmt.Sprintf("Multi-trait trade-off (recommended strategy %q):", decision.BestRiskAdjustedName))
+		for _, tr := range req.Traits {
+			gain := decision.PerTraitGain[tr.Name]
+			arrow := "+"
+			if gain < 0 {
+				arrow = ""
+			}
+			sb = append(sb, fmt.Sprintf("• %s: %s%.4f (selection weight %+.2f)", tr.Name, arrow, gain, tr.SelectionWeight))
+		}
+		sb = append(sb, "Cross-trait responses are simulated under additive-only multi-trait selection (Issue 18 MVP); non-additive components (dominance, epistasis) are not modelled. Use the sensitivity sweep panel above to test robustness across selection-weight ranges.")
+		decision.Interpretation = append(decision.Interpretation, strings.Join(sb, "  "))
+	}
 
 	reportProgress(progress, 98, "building response")
-	notes := buildNotes(req, len(strategies), baseDiversity, nil)
+	notes := buildNotes(req, len(strategies), baseDiversity, datasetMeta)
 	notes = append(notes, fmt.Sprintf("Multi-trait MVP (Issue 18): %d traits with weighted selection-index truncation. OCS-like with similarity penalty is not implemented in the multi-trait path yet — strategies map to index-based truncation regardless of Rule (except no_selection and random).", T))
 	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: notes}, nil
 }

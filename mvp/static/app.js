@@ -96,7 +96,12 @@ function requestFromForm() {
     // unset values force "unclassifiable" on the backend.
     // v0.7.19 — Issue 32. Added variant_type and endogenous_gene_interrupted
     // to encode the Annex I Path (i) vs Path (ii) split.
-    ngt: ngtContextFromForm()
+    ngt: ngtContextFromForm(),
+    // v0.7.22 — Issues 24/25. Multi-trait state. Included only when active;
+    // empty multi-trait state ⇒ single-trait code path on the backend.
+    ...(multiTraitState.traits && multiTraitState.traits.length
+        ? {traits: multiTraitState.traits.map(t => ({...t})), genetic_correlations: multiTraitState.genetic_correlations.map(r => r.slice())}
+        : {})
   };
 }
 
@@ -132,14 +137,94 @@ function updateNGTEndogenousFieldVisibility() {
   wrap.hidden = vt.value !== 'gene_pool_insertion';
 }
 
+// v0.7.22 — Issue 24. Build / refresh the selection-index sliders from
+// the current multiTraitState. Called by setFormValues (preset load) and
+// by the composer's own slider 'input' handlers. Hides itself when
+// multiTraitState is empty (single-trait runs).
+function refreshSelectionIndexComposer() {
+  const wrap = byId('selectionIndexComposer');
+  const list = byId('selectionIndexSliders');
+  const preview = byId('selectionIndexPreview');
+  if (!wrap || !list) return;
+  const traits = multiTraitState.traits;
+  if (!traits || !traits.length) {
+    wrap.hidden = true;
+    list.innerHTML = '';
+    return;
+  }
+  list.innerHTML = traits.map((t, i) => `
+    <div class="field">
+      <label>
+        <span>${escapeHtml(t.name)} <span class="tip" tabindex="0" data-tip="Weight in the selection index. Higher = pull harder. Negative = select against this trait. Range −2.0 to +2.0.">?</span></span>
+        <span>weight</span>
+      </label>
+      <input type="range" id="trait_weight_${i}" min="-2.0" max="2.0" step="0.05" value="${Number(t.selection_weight) || 0}" data-trait-idx="${i}">
+      <input type="number" id="trait_weight_n_${i}" min="-2.0" max="2.0" step="0.05" value="${Number(t.selection_weight) || 0}" data-trait-idx="${i}" style="width:80px;">
+    </div>
+  `).join('');
+  // Wire change events so the sliders + number boxes mirror each other,
+  // and both write back into multiTraitState.
+  list.querySelectorAll('input[data-trait-idx]').forEach(el => {
+    el.addEventListener('input', () => {
+      const idx = Number(el.getAttribute('data-trait-idx'));
+      const v = Number(el.value);
+      multiTraitState.traits[idx].selection_weight = v;
+      const slider = byId('trait_weight_' + idx);
+      const num = byId('trait_weight_n_' + idx);
+      if (slider && slider !== el) slider.value = v;
+      if (num && num !== el) num.value = v;
+      updateSelectionIndexPreview();
+    });
+  });
+  wrap.hidden = false;
+  updateSelectionIndexPreview();
+}
+
+function updateSelectionIndexPreview() {
+  const preview = byId('selectionIndexPreview');
+  if (!preview) return;
+  const traits = multiTraitState.traits || [];
+  const pro = traits.filter(t => t.selection_weight > 0).map(t => `${t.name} (${(t.selection_weight > 0 ? '+' : '')}${Number(t.selection_weight).toFixed(2)})`);
+  const con = traits.filter(t => t.selection_weight < 0).map(t => `${t.name} (${Number(t.selection_weight).toFixed(2)})`);
+  const flat = traits.filter(t => t.selection_weight === 0).map(t => t.name);
+  const parts = [];
+  if (pro.length) parts.push(`<strong style="color:var(--ok)">prioritises</strong> ${pro.join(', ')}`);
+  if (con.length) parts.push(`<strong style="color:var(--warn)">suppresses</strong> ${con.join(', ')}`);
+  if (flat.length) parts.push(`ignores ${flat.join(', ')}`);
+  preview.innerHTML = parts.length ? 'Net selection direction: ' + parts.join(' · ') : '';
+}
+
+// v0.7.22 — Issues 24/25. Out-of-DOM state for the multi-trait config.
+// Form sliders (Issue 24) and presets (Issue 25) write here; requestFromForm
+// reads here and injects into the API payload. Cleared by clearMultiTraitState
+// when the operator picks a single-trait preset.
+let multiTraitState = {traits: null, genetic_correlations: null};
+
 function setFormValues(values) {
+  // Handle multi-trait fields first so a preset can flip into multi-trait
+  // mode in one click. setFormValues skips IDs that don't exist in the
+  // DOM; traits and genetic_correlations live in state rather than DOM.
+  if (Array.isArray(values.traits) && Array.isArray(values.genetic_correlations)) {
+    multiTraitState.traits = values.traits.map(t => ({...t}));
+    multiTraitState.genetic_correlations = values.genetic_correlations.map(r => r.slice());
+  } else if ('traits' in values || 'genetic_correlations' in values) {
+    // explicit empty/null on a preset → clear multi-trait state.
+    multiTraitState.traits = null;
+    multiTraitState.genetic_correlations = null;
+  } else {
+    // Preset has no multi-trait field → treat as single-trait (clear state).
+    multiTraitState.traits = null;
+    multiTraitState.genetic_correlations = null;
+  }
   for (const [id, value] of Object.entries(values)) {
+    if (id === 'traits' || id === 'genetic_correlations') continue;
     const el = byId(id);
     if (!el) continue;
     if (el.type === 'checkbox') el.checked = Boolean(value);
     else el.value = String(value);
   }
   updateBudgetMeter();
+  refreshSelectionIndexComposer();
 }
 
 const presets = {
@@ -238,6 +323,67 @@ const presets = {
     worker_count: 0,
     inbreeding_limit: 0.20,
     diversity_loss_limit: 0.35
+  },
+  // v0.7.22 — Issue 25. Methane (dairy, intensity) preset. Two-trait run
+  // with the FAVOURABLE correlation between milk yield and methane
+  // intensity (r_g = −0.26 per audited 2026-05-28 literature). Selection
+  // against methane intensity also improves milk yield — the operator-
+  // facing "happy path".
+  methane_dairy_intensity: {
+    seed: 20260601,
+    population_size: 200,
+    markers: 600,
+    qtl_count: 40,
+    generations: 8,
+    selection_percent: 12,
+    heritability: 0.36,
+    mutation_rate: 0.00001,
+    crispr_enabled: false,
+    crispr_edits: 0,
+    crispr_intro_percent: 0,
+    strategy_set: 'core',
+    replicates: 3,
+    worker_count: 0,
+    inbreeding_limit: 0.25,
+    diversity_loss_limit: 0.35,
+    traits: [
+      {name: 'milk_yield',        heritability: 0.36,  qtl_count: 30, effect_scale: 1.0, selection_weight: 1.0},
+      {name: 'methane_intensity', heritability: 0.180, qtl_count: 20, effect_scale: 1.0, selection_weight: -0.5}
+    ],
+    genetic_correlations: [
+      [1.0, -0.26],
+      [-0.26, 1.0]
+    ]
+  },
+  // v0.7.22 — Issue 25. Methane (dairy, production) preset — educational
+  // contrast. UNFAVOURABLE positive correlation (r_g = +0.35 audited):
+  // selecting against methane production trades off against milk yield.
+  // Same shape as the intensity preset; different correlation sign.
+  methane_dairy_production: {
+    seed: 20260601,
+    population_size: 200,
+    markers: 600,
+    qtl_count: 40,
+    generations: 8,
+    selection_percent: 12,
+    heritability: 0.36,
+    mutation_rate: 0.00001,
+    crispr_enabled: false,
+    crispr_edits: 0,
+    crispr_intro_percent: 0,
+    strategy_set: 'core',
+    replicates: 3,
+    worker_count: 0,
+    inbreeding_limit: 0.25,
+    diversity_loss_limit: 0.35,
+    traits: [
+      {name: 'milk_yield',         heritability: 0.36,  qtl_count: 30, effect_scale: 1.0, selection_weight: 1.0},
+      {name: 'methane_production', heritability: 0.211, qtl_count: 20, effect_scale: 1.0, selection_weight: -0.5}
+    ],
+    genetic_correlations: [
+      [1.0, +0.35],
+      [+0.35, 1.0]
+    ]
   }
 };
 
@@ -376,7 +522,9 @@ function applyPreset(name) {
     balanced: 'Balanced default',
     large: 'Large fast demo',
     crispr: 'CRISPR seed demo',
-    holstein: 'Holstein dairy (single-trait, milk yield)'
+    holstein: 'Holstein dairy (single-trait, milk yield)',
+    methane_dairy_intensity: 'Methane (dairy, intensity) — favourable -0.26 correlation',
+    methane_dairy_production: 'Methane (dairy, production) — unfavourable +0.35 correlation'
   };
   markDirty(`${names[name] || name} preset loaded`);
 }
@@ -392,6 +540,8 @@ function renderAll(data, prev) {
   drawMetricChart('chart_drift', 'legend_drift', data, prev, 'allele_drift', 'Allele drift');
   drawMetricChart('chart_lost', 'legend_lost', data, prev, 'rare_useful_lost', 'Rare useful loci lost');
   drawMetricChart('chart_fixed', 'legend_fixed', data, prev, 'fixed_loci', 'Fixed loci');
+  // v0.7.22 — Issue 23. Multi-trait Pareto axis controls.
+  refreshParetoAxisControls(data);
   drawParetoChart('chart_pareto', data);
   // v0.7.18 — pass set-level NGT classification to both renderers.
   const ngt = (data.decision && data.decision.ngt) || null;
@@ -625,6 +775,54 @@ function renderStrategyTable(strategies, prev) {
 }
 
 
+// v0.7.22 — Issue 23. Axis identifiers used by the picker:
+//   "combined_risk"  → combinedRisk(strategy.final)
+//   "trait:<name>"   → last per-trait gain from strategy.per_trait_metrics
+//   "single_gain"    → strategy.final.genetic_gain (single-trait fallback)
+function paretoAxisExtractor(axisKey, traits) {
+  if (axisKey === 'combined_risk') return s => combinedRisk(s.final);
+  if (axisKey === 'single_gain') return s => Number(s.final.genetic_gain);
+  if (axisKey && axisKey.startsWith('trait:')) {
+    const name = axisKey.slice(6);
+    const idx = (traits || []).findIndex(t => t.name === name);
+    if (idx < 0) return s => 0;
+    return s => {
+      const ptm = s.per_trait_metrics;
+      if (!ptm || !ptm[idx] || !ptm[idx].length) return 0;
+      return Number(ptm[idx][ptm[idx].length - 1].genetic_gain) || 0;
+    };
+  }
+  return s => Number(s.final.genetic_gain);
+}
+
+// v0.7.22 — Issue 23. Populate axis dropdowns based on what the run carries.
+// Multi-trait runs get the controls visible; single-trait keeps them hidden.
+function refreshParetoAxisControls(data) {
+  const wrap = byId('paretoAxisControls');
+  const xSel = byId('paretoAxisX');
+  const ySel = byId('paretoAxisY');
+  if (!wrap || !xSel || !ySel) return;
+  const traits = (data && data.request && data.request.traits) || [];
+  if (!traits.length) {
+    wrap.hidden = true;
+    return;
+  }
+  const opts = [
+    {key: 'combined_risk', label: 'combined risk'},
+    ...traits.map(t => ({key: 'trait:' + t.name, label: t.name + ' (gain)'}))
+  ];
+  const renderOpts = sel => {
+    const prev = sel.value;
+    sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`).join('');
+    if (opts.find(o => o.key === prev)) sel.value = prev;
+  };
+  renderOpts(xSel);
+  renderOpts(ySel);
+  if (!xSel.value) xSel.value = 'combined_risk';
+  if (!ySel.value) ySel.value = 'trait:' + traits[0].name;
+  wrap.hidden = false;
+}
+
 function drawParetoChart(canvasId, data) {
   const canvas = byId(canvasId);
   if (!canvas) return;
@@ -637,10 +835,22 @@ function drawParetoChart(canvasId, data) {
   const margin = {left: 62, right: 24, top: 28, bottom: 52};
   const innerW = width - margin.left - margin.right;
   const innerH = height - margin.top - margin.bottom;
-  const gains = strategies.map(s => Number(s.final.genetic_gain));
-  const risks = strategies.map(s => combinedRisk(s.final));
-  let minX = Math.min(...risks), maxX = Math.max(...risks);
-  let minY = Math.min(...gains), maxY = Math.max(...gains);
+  // v0.7.22 — Issue 23. If the multi-trait axis picker is visible, use its
+  // selected values; otherwise the existing single-trait default
+  // (combined risk × genetic gain) is used.
+  const traits = (data.request && data.request.traits) || [];
+  const xCtrl = byId('paretoAxisX');
+  const yCtrl = byId('paretoAxisY');
+  const xKey = (traits.length && xCtrl && xCtrl.value) ? xCtrl.value : 'combined_risk';
+  const yKey = (traits.length && yCtrl && yCtrl.value) ? yCtrl.value : 'single_gain';
+  const xLabelText = (traits.length && xCtrl) ? xCtrl.options[xCtrl.selectedIndex].text : 'combined risk probability';
+  const yLabelText = (traits.length && yCtrl) ? yCtrl.options[yCtrl.selectedIndex].text : 'genetic gain';
+  const xGet = paretoAxisExtractor(xKey, traits);
+  const yGet = paretoAxisExtractor(yKey, traits);
+  const xs = strategies.map(xGet);
+  const ys = strategies.map(yGet);
+  let minX = Math.min(...xs), maxX = Math.max(...xs);
+  let minY = Math.min(...ys), maxY = Math.max(...ys);
   if (Math.abs(maxX - minX) < 1e-9) { minX -= 0.1; maxX += 0.1; }
   if (Math.abs(maxY - minY) < 1e-9) { minY -= 1; maxY += 1; }
   const padX = (maxX - minX) * 0.12;
@@ -668,16 +878,16 @@ function drawParetoChart(canvasId, data) {
     ctx.fillText(fmt(val), xx, margin.top + innerH + 12);
   }
   ctx.fillStyle = 'rgba(237,248,245,0.90)';
-  ctx.textAlign = 'left'; ctx.fillText('Pareto frontier: gain vs combined risk', margin.left, 6);
-  ctx.textAlign = 'center'; ctx.fillText('combined risk probability', margin.left + innerW / 2, height - 22);
+  ctx.textAlign = 'left'; ctx.fillText('Pareto frontier: ' + yLabelText + ' vs ' + xLabelText, margin.left, 6);
+  ctx.textAlign = 'center'; ctx.fillText(xLabelText, margin.left + innerW / 2, height - 22);
   ctx.save();
   ctx.translate(16, margin.top + innerH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText('genetic gain', 0, 0);
+  ctx.fillText(yLabelText, 0, 0);
   ctx.restore();
   for (const s of strategies) {
-    const xx = x(combinedRisk(s.final));
-    const yy = y(s.final.genetic_gain);
+    const xx = x(xGet(s));
+    const yy = y(yGet(s));
     ctx.fillStyle = colors[s.code] || '#fff';
     ctx.strokeStyle = s.final.pareto_optimal ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.25)';
     ctx.lineWidth = s.final.pareto_optimal ? 3 : 1;
@@ -1487,6 +1697,15 @@ window.addEventListener('DOMContentLoaded', () => {
     vt.addEventListener('change', updateNGTEndogenousFieldVisibility);
     updateNGTEndogenousFieldVisibility();
   }
+  // v0.7.22 — Issue 23. Pareto axis pickers re-render on change. Re-uses
+  // the last cached run state so the chart updates without a full re-run.
+  const px = byId('paretoAxisX');
+  const py = byId('paretoAxisY');
+  const redrawPareto = () => {
+    if (currentData) drawParetoChart('chart_pareto', currentData);
+  };
+  if (px) px.addEventListener('change', redrawPareto);
+  if (py) py.addEventListener('change', redrawPareto);
   // v0.7.16 sensitivity panel.
   const sensAxis = byId('sensAxis');
   const sensValues = byId('sensValues');

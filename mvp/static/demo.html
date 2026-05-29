@@ -22,7 +22,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.21 — Multi-trait engine (Issue 18, shared infra)</div>
+      <div class="kicker">MVP v0.7.22 — Methane-pack + Holstein 19 (synthetic data) + N-D Pareto + index UI</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -42,6 +42,8 @@
           <button class="btn tiny" type="button" data-preset="large">Large fast</button>
           <button class="btn tiny" type="button" data-preset="crispr">CRISPR seed</button>
           <button class="btn tiny" type="button" data-preset="holstein">Holstein dairy</button>
+          <button class="btn tiny" type="button" data-preset="methane_dairy_intensity">Methane MeI</button>
+          <button class="btn tiny" type="button" data-preset="methane_dairy_production">Methane MeP</button>
         </div>
 
         <div class="form-grid">
@@ -292,6 +294,13 @@
             </div>
           </details>
 
+          <details id="selectionIndexComposer" class="advanced-section" hidden>
+            <summary><strong>Selection index (weights per trait)</strong> <small>(Issue 24 — multi-trait runs only)</small></summary>
+            <p class="note" id="selectionIndexHint" style="margin:6px 0 8px;">Range: −2.0 to +2.0. Positive = select FOR; negative = select AGAINST.</p>
+            <div id="selectionIndexSliders"></div>
+            <p class="note" id="selectionIndexPreview" style="margin-top:8px;"></p>
+          </details>
+
           <details class="constraints-group">
             <summary><strong>Program constraints</strong> <span class="constraints-hint">(optional — 0 = no constraint)</span></summary>
             <p class="constraints-explainer">Hard caps from your breeding program. Strategies that fail any active constraint are marked infeasible; the decision report highlights the best feasible strategy separately.</p>
@@ -427,7 +436,12 @@
         </div>
 
         <div class="card chart-card">
-          <div class="chart-title"><h3>Pareto decision chart</h3><small>genetic gain vs combined risk probability</small></div>
+          <div class="chart-title"><h3>Pareto decision chart</h3><small>genetic gain vs combined risk probability — axes are pickable when multi-trait is active</small></div>
+          <div id="paretoAxisControls" class="pareto-axis-controls" hidden>
+            <label>X-axis<select id="paretoAxisX"></select></label>
+            <label>Y-axis<select id="paretoAxisY"></select></label>
+            <small>Pareto non-dominance uses the full N-D space; this view is a 2D projection.</small>
+          </div>
           <canvas id="chart_pareto" width="900" height="340"></canvas>
           <p class="note">Upper-left is usually better: more gain with less combined risk. White outline marks non-dominated Pareto candidates.</p>
         </div>

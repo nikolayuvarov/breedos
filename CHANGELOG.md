@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.22] - 2026-05-28
+
+### Added — Methane-pack complete (Issues 22–26) + Holstein Issue 19
+
+The full Methane-pack ships in one bundle, riding on the v0.7.21 multi-trait engine.
+
+**Issue 22 — Methane trait module** (`mvp/methane_module.go`). Constants
+for methane heritability (MeY 0.244, MeI 0.180, MeP 0.211 per Brito et al.
+2022 meta-analysis) and the audited correlations with milk yield: MeI ×
+corrected milk yield = −0.26 (favourable), MeY × corrected milk yield =
+−0.43 (favourable), MeP × milk yield = +0.35 (unfavourable). Helpers
+`methaneIntensityDefaults()` and `methaneProductionDefaults()` build the
+2-trait config + correlation matrix used by the presets.
+
+**Issue 23 — N-D Pareto + axis picker.** Backend
+`multiTraitDominates` + `annotateMultiTraitPareto` generalise the existing
+single-trait domination by adding one dimension per trait gain. Frontend
+adds X / Y axis dropdowns above the Pareto canvas; the chart projects N-D
+dominance onto the chosen 2D plane while keeping the non-dominance
+white-outline accurate.
+
+**Issue 24 — Selection-index weight composer.** New collapsible form
+section "Selection index (weights per trait)" surfaces sliders + number
+boxes for each trait's weight (range −2 to +2, step 0.05). Live preview
+text labels the net selection direction ("prioritises X · suppresses Y").
+Hidden when no multi-trait state is active.
+
+**Issue 25 — Methane preset buttons.** Two new preset buttons next to
+Holstein dairy: "Methane MeI" (favourable −0.26 correlation; the operator-
+facing happy path) and "Methane MeP" (unfavourable +0.35; educational
+contrast). Both bundle Holstein-typical scale + the methane trait + matching
+genetic-correlation matrix.
+
+**Issue 26 — Multi-trait decision report section.** When the run has 2+
+traits, the Decision Report's interpretation block gets a paragraph
+listing per-trait gains, the selection weights that drove them, and the
+"additive-only model" caveat (no dominance / epistasis in the simulator).
+
+**Holstein Issue 19 — Synthetic Holstein founder dataset**
+(`mvp/holstein_dataset.go`). New `dataset = holstein_synthetic` value
+generates a Beta(0.5, 0.5) MAF founder population sampled at Hardy-Weinberg
+equilibrium. Honesty-layer disclosure in `sourceNotes` makes the synthetic
+status explicit; the registry page entry points operators to 1000 Bull
+Genomes Run 8 (public NCBI) and Run 9 (controlled CNGB) for real data.
+
+**Holstein Issue 21 Pareto overlay — DEFERRED.** Conflating standardised
+gain units with kg-of-milk inbreeding cost on the same axis would be
+misleading. The text-only inbreeding-cost note (shipped v0.7.20) is the
+authoritative reporting path. Documented in the issue's completion note.
+
+Schema (additive only):
+
+- `SimRequest.Traits` and `SimRequest.GeneticCorrelations` already
+  introduced in v0.7.21 — now used by presets and by the new composer.
+- `StrategyResult.PerTraitMetrics` and `DecisionSummary.PerTraitGain`
+  consumed by the Pareto axis-picker and the report section.
+
+10 new unit tests in `mvp/methane_test.go` cover: methane intensity / production preset shape and correlation signs (3); presets pass Cholesky decomposition (1); synthetic Holstein dataset shape, dosage range, and AFS U-shape verification (2); N-D Pareto domination — strict / tradeoff / better-on-other-axis (3); multi-trait report section appears (1); multi-trait + Holstein-synthetic end-to-end (1).
+
+### Changed
+- Version strings bumped `v0.7.21` → `v0.7.22` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.21] - 2026-05-28
 
 ### Added — Multi-trait selection engine (Issue 18, shared infra)

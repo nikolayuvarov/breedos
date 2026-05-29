@@ -259,6 +259,10 @@ input[type="checkbox"] { transform: scale(1.15); }
 .budget-meter.over small { color: var(--danger); }
 .btn.primary[disabled] { opacity: 0.45; cursor: not-allowed; filter: grayscale(0.4); }
 input.over-budget { border-color: var(--danger); background: rgba(255, 154, 154, 0.08); box-shadow: 0 0 0 1px var(--danger); }
+.pareto-axis-controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 8px 0 10px; font-size: 13px; color: var(--muted); }
+.pareto-axis-controls label { display: flex; gap: 6px; align-items: center; }
+.pareto-axis-controls select { min-width: 220px; padding: 4px 6px; }
+.pareto-axis-controls small { color: var(--muted); font-size: 12px; }
 .sens-controls { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin: 10px 0 12px; }
 .sens-label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
 .sens-label select, .sens-label input { min-width: 200px; }
