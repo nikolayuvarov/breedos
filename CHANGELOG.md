@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.21] - 2026-05-28
+
+### Added — Multi-trait selection engine (Issue 18, shared infra)
+
+When `req.Traits` is non-empty, the simulator branches to a new
+`runMultiTraitSimulation` path in `mvp/multitrait.go`. Per-trait marker
+effects are drawn with the requested genetic-correlation structure via
+Cholesky decomposition of the T×T correlation matrix; per-trait
+phenotypes are computed with their own h² environmental noise; selection
+runs on a weighted standardised index `I_i = Σ_t w_t · (p_{t,i} − mean_t) / sd_t`.
+Per-trait gain for the recommended (best risk-adjusted) strategy lands
+in `DecisionSummary.PerTraitGain` (keyed by trait name); per-generation
+per-trait metrics land in `StrategyResult.PerTraitMetrics`.
+
+Schema (additive only):
+
+- `SimRequest.Traits []TraitConfig` — per-trait architecture.
+- `SimRequest.GeneticCorrelations [][]float64` — T×T correlation matrix.
+- `StrategyResult.PerTraitMetrics [][]MetricPoint` (per-trait trajectories).
+- `StrategyResult.SelectionIndex []float64` (per-generation mean index of selected parents).
+- `DecisionSummary.PerTraitGain map[string]float64`.
+
+**Backward compatibility:** `req.Traits` empty/nil → existing single-trait
+path runs unchanged. The branch lives at the top of
+`runSimulationWithCallbacks`. Verified by
+`TestRunSimulation_SingleTraitPayloadStillWorks`.
+
+**Strategy rules in the multi-trait path:** `no_selection` and `random`
+behave as today; all other rules map to index-based truncation selection
+in this MVP. The OCS-like similarity penalty is not yet ported to the
+multi-trait path — documented in a run-level note.
+
+15 new unit tests in `mvp/multitrait_test.go`:
+empty traits / duplicate names / non-square matrix / bad diagonal /
+out-of-range correlation / asymmetric correlation / modest-valid case;
+Cholesky identity / 2×2 closed form / general `LL^T = C` verification on
+a 3×3; selection-index closed-form (5-individual hand-checked);
+QTL masking (top-N by |effect|); end-to-end smoke (per-trait gain map);
+strong-correlation tug-of-war (finite outputs); single-trait backward-
+compat regression.
+
+### Changed
+- Version strings bumped `v0.7.20` → `v0.7.21` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.20] - 2026-05-28
 
 ### Added — Holstein-pack first slice (Issues 17, 20, 21)

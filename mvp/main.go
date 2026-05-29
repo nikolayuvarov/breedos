@@ -61,6 +61,23 @@ type SimRequest struct {
 	// v0.7.18 — Issue 13 EU NGT regulatory context for candidate-edit classification.
 	// Optional: when zero-valued, the resulting classification is "unclassifiable".
 	NGT NGTContext `json:"ngt,omitempty"`
+	// v0.7.21 — Issue 18. Multi-trait selection. Empty/nil triggers the
+	// existing single-trait code path (backward compat). When non-empty,
+	// runMultiTraitSimulation is used and selection runs on a weighted
+	// index of per-trait standardised phenotypes.
+	Traits              []TraitConfig `json:"traits,omitempty"`
+	GeneticCorrelations [][]float64   `json:"genetic_correlations,omitempty"`
+}
+
+// v0.7.21 — Issue 18. Single trait's architecture within a multi-trait run.
+// Heritability, QTLCount, and EffectScale are independent per trait;
+// SelectionWeight is the trait's weight in the selection index.
+type TraitConfig struct {
+	Name            string  `json:"name"`
+	Heritability    float64 `json:"heritability"`
+	QTLCount        int     `json:"qtl_count"`
+	EffectScale     float64 `json:"effect_scale"`
+	SelectionWeight float64 `json:"selection_weight"`
 }
 
 type SimResponse struct {
@@ -96,6 +113,10 @@ type DecisionSummary struct {
 	// CrisprEdits > 0). Carries the verdict + reasons + disqualifiers +
 	// "Not legal advice" disclaimer.
 	NGT *NGTClassification `json:"ngt,omitempty"`
+	// v0.7.21 — Issue 18. Headline per-trait gain for the recommended
+	// (best risk-adjusted) strategy, keyed by trait name. Populated only on
+	// multi-trait runs.
+	PerTraitGain map[string]float64 `json:"per_trait_gain,omitempty"`
 }
 
 type Tradeoff struct {
@@ -119,6 +140,12 @@ type StrategyResult struct {
 	ParetoOptimal bool          `json:"pareto_optimal"`
 	Metrics       []MetricPoint `json:"metrics"`
 	Final         FinalStats    `json:"final"`
+	// v0.7.21 — Issue 18. Populated only by multi-trait runs.
+	// PerTraitMetrics[t] holds the per-generation trajectory for trait t
+	// (length == len(req.Traits)); SelectionIndex is the per-generation
+	// weighted standardised index used for selection.
+	PerTraitMetrics [][]MetricPoint `json:"per_trait_metrics,omitempty"`
+	SelectionIndex  []float64       `json:"selection_index,omitempty"`
 }
 
 type MetricPoint struct {
@@ -526,6 +553,12 @@ func runSimulationWithProgress(req SimRequest, progress progressFunc) (SimRespon
 func runSimulationWithCallbacks(req SimRequest, progress progressFunc, snapshot snapshotFunc) (SimResponse, error) {
 	reportProgress(progress, 1, "normalizing request")
 	normalizeRequest(&req)
+	// v0.7.21 — Issue 18. Multi-trait branch. When req.Traits is set, the
+	// run uses runMultiTraitSimulation; the single-trait path below is
+	// untouched (bit-identical backward compatibility for existing payloads).
+	if len(req.Traits) > 0 {
+		return runMultiTraitSimulation(req, progress, snapshot)
+	}
 	strategies := buildStrategyConfigs(req)
 	if err := validateRequest(req, len(strategies)); err != nil {
 		return SimResponse{}, err
@@ -591,7 +624,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.21 ships the multi-trait engine (Issue 18, shared infra for Holstein and Methane packs). When req.Traits is set, the new branch runs a parallel simulator that draws correlated per-trait marker effects via Cholesky decomposition of the genetic-correlation matrix, computes per-trait phenotypes, and selects by a weighted standardised index. Backward compatibility: req.Traits unset → existing single-trait path unchanged. v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
