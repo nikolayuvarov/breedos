@@ -214,6 +214,30 @@ const presets = {
     worker_count: 0,
     inbreeding_limit: 0.25,
     diversity_loss_limit: 0.30
+  },
+  // v0.7.20 — Issue 17. Holstein dairy preset. Defaults reflect the published
+  // dairy literature audited 2026-05-28: N=800 cows, ~1500 markers, 8-generation
+  // (≈ 40-year) horizon, h²=0.36 for milk yield, selection_percent=12 (typical
+  // bull-dam tier), 5 replicates for noisy short-horizon. inbreeding_limit
+  // 0.20 reflects the published Holstein concern range; single-trait until
+  // the multi-trait engine ships (Issue 18).
+  holstein: {
+    seed: 20260601,
+    population_size: 800,
+    markers: 1500,
+    qtl_count: 50,
+    generations: 8,
+    selection_percent: 12,
+    heritability: 0.36,
+    mutation_rate: 0.00001,
+    crispr_enabled: false,
+    crispr_edits: 0,
+    crispr_intro_percent: 0,
+    strategy_set: 'core',
+    replicates: 5,
+    worker_count: 0,
+    inbreeding_limit: 0.20,
+    diversity_loss_limit: 0.35
   }
 };
 
@@ -351,7 +375,8 @@ function applyPreset(name) {
     tiny: 'Tiny drift demo',
     balanced: 'Balanced default',
     large: 'Large fast demo',
-    crispr: 'CRISPR seed demo'
+    crispr: 'CRISPR seed demo',
+    holstein: 'Holstein dairy (single-trait, milk yield)'
   };
   markDirty(`${names[name] || name} preset loaded`);
 }
@@ -363,6 +388,7 @@ function renderAll(data, prev) {
   drawMetricChart('chart_gain', 'legend_gain', data, prev, 'genetic_gain', 'Genetic gain');
   drawMetricChart('chart_diversity', 'legend_diversity', data, prev, 'diversity', 'Diversity');
   drawMetricChart('chart_inbreeding', 'legend_inbreeding', data, prev, 'inbreeding', 'Inbreeding');
+  drawNeChart('chart_ne', 'legend_ne', data, prev);
   drawMetricChart('chart_drift', 'legend_drift', data, prev, 'allele_drift', 'Allele drift');
   drawMetricChart('chart_lost', 'legend_lost', data, prev, 'rare_useful_lost', 'Rare useful loci lost');
   drawMetricChart('chart_fixed', 'legend_fixed', data, prev, 'fixed_loci', 'Fixed loci');
@@ -848,6 +874,117 @@ function drawMetricChart(canvasId, legendId, data, prev, metric, title) {
   drawSeries(ctx, prevStrategies, metric, x, y, true);
   drawSeries(ctx, strategies, metric, x, y, false);
 
+  const currentLegend = strategies.map(s => `
+    <span><i class="dot" style="background:${colors[s.code] || '#fff'}"></i>${escapeHtml(labels[s.code] || s.name)}</span>
+  `).join('');
+  const previousLegend = prevStrategies.length ? '<span><i class="dash-sample"></i>previous run</span>' : '';
+  byId(legendId).innerHTML = currentLegend + previousLegend;
+}
+
+// v0.7.20 — Issue 20. Effective population size chart on a log scale, with
+// FAO reference lines at Ne=100 (vulnerable, yellow) and Ne=50 (long-term-
+// viability, red). The backend already computes Ne per generation via
+// populateNeTrajectory; this is a render-only function.
+function drawNeChart(canvasId, legendId, data, prev) {
+  const canvas = byId(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  const strategies = data.strategies || [];
+  const prevStrategies = prev ? (prev.strategies || []) : [];
+  const margin = {left: 64, right: 18, top: 18, bottom: 42};
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  // Fixed log10 range: Ne in [10, 10000]. Keeps the chart comparable
+  // across runs and makes the reference lines land at stable positions.
+  const logMin = 1; // log10(10)
+  const logMax = 4; // log10(10000)
+  let maxGen = 0;
+  function scanGen(series) {
+    for (const s of series) {
+      for (const p of s.metrics || []) {
+        maxGen = Math.max(maxGen, Number(p.generation));
+      }
+    }
+  }
+  scanGen(strategies);
+  scanGen(prevStrategies);
+  if (maxGen === 0) return;
+
+  function x(gen) {
+    return margin.left + (Number(gen) / maxGen) * innerW;
+  }
+  function y(ne) {
+    let v = Number(ne);
+    if (!Number.isFinite(v) || v <= 0) v = 10;
+    if (v < 10) v = 10;
+    if (v > 10000) v = 10000;
+    const lg = Math.log10(v);
+    return margin.top + (1 - (lg - logMin) / (logMax - logMin)) * innerH;
+  }
+
+  // Chart background.
+  ctx.fillStyle = 'rgba(255,255,255,0.025)';
+  ctx.fillRect(margin.left, margin.top, innerW, innerH);
+
+  // Gridlines at each integer log10 decade (10, 100, 1000, 10000).
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.fillStyle = 'rgba(237,248,245,0.72)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.setLineDash([]);
+  for (let i = logMin; i <= logMax; i++) {
+    const yy = y(Math.pow(10, i));
+    ctx.beginPath();
+    ctx.moveTo(margin.left, yy);
+    ctx.lineTo(margin.left + innerW, yy);
+    ctx.stroke();
+    ctx.fillText(String(Math.pow(10, i)), margin.left - 6, yy);
+  }
+
+  // FAO reference lines (dashed):
+  // - Ne = 100 (vulnerable threshold, yellow / warn)
+  // - Ne =  50 (long-term-viability threshold, red / danger)
+  function refLine(ne, colour, label) {
+    ctx.save();
+    ctx.strokeStyle = colour;
+    ctx.fillStyle = colour;
+    ctx.setLineDash([5, 5]);
+    ctx.lineWidth = 1.5;
+    const yy = y(ne);
+    ctx.beginPath();
+    ctx.moveTo(margin.left, yy);
+    ctx.lineTo(margin.left + innerW, yy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.textAlign = 'left';
+    ctx.font = '11px system-ui, sans-serif';
+    ctx.fillText(label, margin.left + 8, yy - 6);
+    ctx.restore();
+  }
+  refLine(100, '#ffd38c', 'Ne = 100 (FAO vulnerable)');
+  refLine(50,  '#ff9a9a', 'Ne = 50 (long-term viability)');
+
+  // X-axis labels (generation ticks every ~5 generations).
+  ctx.fillStyle = 'rgba(237,248,245,0.72)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const tickStep = Math.max(1, Math.ceil(maxGen / 8));
+  for (let g = 0; g <= maxGen; g += tickStep) {
+    ctx.fillText(String(g), x(g), margin.top + innerH + 4);
+  }
+
+  // Series: previous run (dashed) then current (solid).
+  drawSeries(ctx, prevStrategies, 'ne', x, y, true);
+  drawSeries(ctx, strategies,     'ne', x, y, false);
+
+  // Legend.
   const currentLegend = strategies.map(s => `
     <span><i class="dot" style="background:${colors[s.code] || '#fff'}"></i>${escapeHtml(labels[s.code] || s.name)}</span>
   `).join('');

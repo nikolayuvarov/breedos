@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.20] - 2026-05-28
+
+### Added — Holstein-pack first slice (Issues 17, 20, 21)
+
+First three issues of the Holstein-inbreeding pack ship together. Issue 18
+(multi-trait engine) and Issue 19 (real-data dataset adapter) are deferred
+to v0.7.21+ because they require substantially more work and don't gate
+the visible value of the other three.
+
+**Issue 17 — Holstein dairy preset.** New preset button "Holstein dairy" in
+the demo's preset row. Defaults reflect the 2026-05-28 audited dairy
+literature: N=800 cows, 1500 markers, 8-generation (~40-year) horizon,
+h²=0.36 for milk yield, selection_percent=12 (bull-dam tier), 5 replicates,
+inbreeding_limit=0.20. Single-trait until Issue 18 ships.
+
+**Issue 20 — Effective-population-size (Ne) trajectory chart.** New chart
+card "Effective population size" after the Diversity / Inbreeding-risk
+pair. Backend computes `Ne = 1 / (2 ΔF)` per generation (Falconer & Mackay
+ch. 5), capped at 10000 when ΔF ≤ 0 to avoid divide-by-zero on the
+log-scale chart. Frontend renders Ne on log10 axis [10, 10000] with FAO
+reference lines at Ne=100 (vulnerable, yellow dashed) and Ne=50
+(long-term-viability, red dashed). One line per strategy with the existing
+colour palette.
+
+**Issue 21 — Inbreeding-cost interpretation in the Decision Report.** When
+the recommended strategy ends with F > 0.01, the Decision Report appends a
+sentence translating that F into expected milk-yield drag under published
+Holstein inbreeding-depression coefficients (range 20–65 kg per 1% F,
+default ≈ 45 kg/F — audited 2026-05-28 against Bjelland 2013, Italian
+Holstein, Canadian Holstein literature). The note explicitly states the
+single-trait assumption (treating the modelled trait AS milk yield) so
+that multi-trait runs (when Issue 18 ships) can override the default.
+
+Schema changes (additive only):
+
+- `MetricPoint` gains `ne float64` (per-generation effective population
+  size from the post-pass over the inbreeding trajectory).
+- `DecisionSummary.Interpretation` includes the inbreeding-cost note when
+  applicable (existing field, new entry).
+
+9 new unit tests in `mvp/holstein_test.go` cover: ΔF≤0 cap; standard ΔF
+values (0.01 → Ne=50; 0.005 → Ne=100; etc.); numerical-tiny ΔF cap;
+generation-0 cap; monotonic-decrease verification; empty/singleton edge
+cases; cost-formula zero/negative guards; audited-range cost at F=5%;
+linear-in-F growth.
+
+### Deferred to v0.7.21+
+
+- Issue 18 (multi-trait engine — shared infra for Methane pack).
+- Issue 19 (Holstein dataset adapter — needs operator-side dataset
+  acquisition; Run 8 public via NCBI, Run 9 controlled access).
+
+### Changed
+- Version strings bumped `v0.7.19` → `v0.7.20` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.19] - 2026-05-28
 
 ### Fixed — NGT Path (ii) gene-pool insertion check (Issue 32 errata to v0.7.18)

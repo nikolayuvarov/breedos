@@ -133,6 +133,13 @@ type MetricPoint struct {
 	FavorableFixed   int     `json:"favorable_fixed"`
 	UnfavorableFixed int     `json:"unfavorable_fixed"`
 	EffectiveParents int     `json:"effective_parents"`
+	// v0.7.20 — Issue 20. Effective population size derived from the
+	// per-generation increase in inbreeding F:
+	//   Ne = 1 / (2 ΔF),  ΔF = F[t] - F[t-1]
+	// (Falconer & Mackay ch. 5.) Capped at maxEffectiveNe when ΔF ≤ 0 or
+	// numerically tiny to avoid divide-by-zero on log-scale chart. Generation
+	// 0 has no preceding generation; its Ne is set to the cap.
+	Ne float64 `json:"ne"`
 }
 
 type FinalStats struct {
@@ -584,7 +591,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.19 closes a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier now distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -845,6 +852,8 @@ func aggregateReplicates(req SimRequest, cfg strategyConfig, reps []StrategyResu
 		den := float64(len(reps))
 		metrics[genIdx] = MetricPoint{Generation: reps[0].Metrics[genIdx].Generation, TraitMean: round4(trait / den), GeneticGain: round4(gain / den), Diversity: round4(diversity / den), Inbreeding: round4(inbreeding / den), AlleleDrift: round4(drift / den), RareUsefulLost: int(math.Round(lost / den)), FixedLoci: int(math.Round(fixed / den)), FavorableFixed: int(math.Round(favFixed / den)), UnfavorableFixed: int(math.Round(unfavFixed / den)), EffectiveParents: int(math.Round(parents / den))}
 	}
+	// v0.7.20 — Issue 20. Fill in Ne[t] = 1 / (2 ΔF) over the metrics slice.
+	populateNeTrajectory(metrics)
 	gains, divs, inbr := make([]float64, 0, len(reps)), make([]float64, 0, len(reps)), make([]float64, 0, len(reps))
 	rareLossEvents, inbreedingBreaches, diversityCollapses := 0, 0, 0
 	for _, rep := range reps {
@@ -1048,6 +1057,24 @@ func buildDecisionSummary(req SimRequest, results []StrategyResult, baseDiversit
 		interpretation = append(interpretation, "No hard constraints supplied — the ranking is purely risk-adjusted. Add constraints (max inbreeding, min gain, etc.) to filter to feasible strategies only.")
 	}
 	interpretation = append(interpretation, "Use the Pareto chart to choose a trade-off, not a single metric. Real BreedOS should optimize under explicit constraints supplied by the breeding program.")
+	// v0.7.20 — Issue 21. Inbreeding-cost note. Only meaningful when the
+	// recommended strategy ended with a non-trivial F. The default
+	// coefficient is the Holstein-literature median (~45 kg per 1% F);
+	// range 20–65 kg/F reflects measure-specific differences (FPED vs
+	// FROH vs FGRM). Single-trait MVP — assumes the modelled trait IS
+	// milk yield; Issue 18 (multi-trait engine) will let multi-trait runs
+	// pick the right trait automatically.
+	if best.Final.Inbreeding > 0.01 {
+		costLo := inbreedingDepressionCostMilkKg(best.Final.Inbreeding, holsteinDepressionMilkLowKgPerF)
+		costHi := inbreedingDepressionCostMilkKg(best.Final.Inbreeding, holsteinDepressionMilkHighKgPerF)
+		costDefault := inbreedingDepressionCostMilkKg(best.Final.Inbreeding, holsteinDepressionMilkDefaultKgPerF)
+		interpretation = append(interpretation, fmt.Sprintf(
+			"Inbreeding cost (if treating the modelled trait as milk yield): the recommended strategy ended with F ≈ %.3f. Under published Holstein inbreeding-depression coefficients (range %g–%g kg of milk per 1%% F, default ≈ %g kg/F), this would drag yield by roughly %.0f kg (range %.0f–%.0f kg). Net forward gain = simulated genetic gain − inbreeding cost.",
+			best.Final.Inbreeding,
+			holsteinDepressionMilkLowKgPerF, holsteinDepressionMilkHighKgPerF, holsteinDepressionMilkDefaultKgPerF,
+			costDefault, costLo, costHi,
+		))
+	}
 	d := DecisionSummary{
 		BestRiskAdjustedCode: best.Code,
 		BestRiskAdjustedName: best.Name,
@@ -1491,6 +1518,62 @@ func validateRequest(req SimRequest, strategyCount int) error {
 }
 func simulationBudget(req SimRequest, strategyCount int) int64 {
 	return int64(req.PopulationSize) * int64(req.Markers) * int64(req.Generations+1) * int64(strategyCount) * int64(req.Replicates)
+}
+
+// v0.7.20 — Issue 20. Cap on effective population size used to keep the
+// log-scale Ne chart well-behaved when the per-generation inbreeding
+// increment is numerically zero (e.g. very early generations before drift
+// has registered). FAO vulnerable threshold is 100; long-term-viability
+// threshold is 50.
+const maxEffectiveNe = 10000.0
+
+// v0.7.20 — Issue 21. Inbreeding-depression coefficients on milk yield (kg
+// per 1% F). Range and default were widened during the 2026-05-28 freshness
+// audit to reflect Bjelland 2013 (NA), Doekes / Italian Holstein, and
+// Canadian Holstein literature. Operator-facing copy reports the range AND
+// the default so the breeder sees the uncertainty explicitly.
+const (
+	holsteinDepressionMilkLowKgPerF     = 20.0
+	holsteinDepressionMilkHighKgPerF    = 65.0
+	holsteinDepressionMilkDefaultKgPerF = 45.0
+)
+
+// inbreedingDepressionCostMilkKg returns the expected milk-yield drag in kg
+// associated with a given inbreeding coefficient F (range 0..1) under the
+// supplied coefficient (kg per 1% F). Always non-negative. Used by Issue 21
+// to compose the inbreeding-cost note in the Decision Report.
+func inbreedingDepressionCostMilkKg(F, coefficientKgPerF float64) float64 {
+	if F <= 0 || coefficientKgPerF <= 0 {
+		return 0
+	}
+	return F * 100.0 * coefficientKgPerF
+}
+
+// effectiveNeFromDeltaF computes Ne = 1 / (2 ΔF) with a sane cap when ΔF
+// is non-positive or numerically tiny. Falconer & Mackay ch. 5.
+func effectiveNeFromDeltaF(deltaF float64) float64 {
+	if deltaF <= 1e-9 {
+		return maxEffectiveNe
+	}
+	ne := 1.0 / (2.0 * deltaF)
+	if ne > maxEffectiveNe {
+		return maxEffectiveNe
+	}
+	return ne
+}
+
+// populateNeTrajectory fills in MetricPoint.Ne from the per-generation
+// inbreeding values. Generation 0 has no preceding generation, so its Ne
+// is set to maxEffectiveNe (chart entry point).
+func populateNeTrajectory(metrics []MetricPoint) {
+	if len(metrics) == 0 {
+		return
+	}
+	metrics[0].Ne = maxEffectiveNe
+	for i := 1; i < len(metrics); i++ {
+		dF := metrics[i].Inbreeding - metrics[i-1].Inbreeding
+		metrics[i].Ne = round4(effectiveNeFromDeltaF(dF))
+	}
 }
 
 func makeEffects(markers, qtl int, rng *rand.Rand) []float64 {
