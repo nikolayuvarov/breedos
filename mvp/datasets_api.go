@@ -46,11 +46,28 @@ type datasetAPIEntry struct {
 }
 
 type datasetAPIResponse struct {
-	Version           int                  `json:"version"`
-	Description       string               `json:"description"`
-	DeployTruncateMb  int                  `json:"deploy_truncate_mb"`
-	ServerDatasetsDir string               `json:"server_datasets_dir"`
-	Datasets          []datasetAPIEntry    `json:"datasets"`
+	Version           int                       `json:"version"`
+	Description       string                    `json:"description"`
+	DeployTruncateMb  int                       `json:"deploy_truncate_mb"`
+	ServerDatasetsDir string                    `json:"server_datasets_dir"`
+	Datasets          []datasetAPIEntry         `json:"datasets"`
+	// v0.7.23 — Issue E. In-memory generated datasets that the simulator
+	// can use via `req.Dataset = "<id>"`. Not downloadable; not file-backed.
+	// Listed separately so the operator sees they exist alongside the
+	// public-file datasets above.
+	GeneratedDatasets []generatedDatasetEntry  `json:"generated_datasets"`
+}
+
+// generatedDatasetEntry describes a synthetic / in-memory dataset that the
+// simulator generates on demand. ExternalReferences point operators at the
+// real-data sources that the synthetic one mimics (so they can graduate
+// from synthetic to real when they have operator-side data acquisition).
+type generatedDatasetEntry struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Description         string   `json:"description"`
+	HonestyNote         string   `json:"honesty_note"`
+	ExternalReferences  []string `json:"external_references"`
 }
 
 func datasetsAPIHandler(w http.ResponseWriter, r *http.Request) {
@@ -98,10 +115,30 @@ func datasetsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		resp.Datasets = append(resp.Datasets, entry)
 	}
+	// v0.7.23 — Issue E. Populate the generated-datasets section.
+	resp.GeneratedDatasets = generatedDatasetsCatalog()
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(resp)
+}
+
+// generatedDatasetsCatalog returns the static list of in-memory dataset
+// generators the simulator supports. Hardcoded for now; if new generators
+// land they get an entry here.
+func generatedDatasetsCatalog() []generatedDatasetEntry {
+	return []generatedDatasetEntry{
+		{
+			ID:          "holstein_synthetic",
+			Name:        "Synthetic Holstein-flavoured founders",
+			Description: "500 diploid individuals × 2000 markers, generated in memory from a Beta(0.5, 0.5) MAF (U-shaped, reflecting Holstein bottleneck history) with Hardy-Weinberg dosage sampling. Subsampled to req.PopulationSize × req.Markers at run time.",
+			HonestyNote: "NOT real bovine genotypes. Statistically Holstein-shaped (MAF distribution mimics published Holstein data) but does not represent any specific bull or herd. Use only for decision-layer modelling, not for breeding decisions on real animals.",
+			ExternalReferences: []string{
+				"1000 Bull Genomes Run 8 (public, NCBI BioProject PRJEB42783)",
+				"1000 Bull Genomes Run 9 (controlled access, CNGB PRJEB56689)",
+			},
+		},
+	}
 }
 
 // serverDatasetsDir resolves to <bindir>/data/datasets/ at runtime. Mirrors

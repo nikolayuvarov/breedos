@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.23] - 2026-05-28
+
+### Added — Five small improvements (A/B/C/D/E)
+
+**A — Climate Issue 27 foundation.** `mvp/climate.go` introduces
+`ClimateStressMode` / `ClimateScenario` types and an 8-mode catalog
+(normal, heat_burst_anthesis, heat_burst_booting, heat_grain_filling,
+combined_postflowering, prolonged_heat, drought_terminal, salinity_chronic)
+with audited 2026-05-28 windows + effect families. `LookupClimateMode`,
+`ValidateClimateScenario`, and `ClimateModesCatalog` helpers exposed.
+**No simulation impact yet** — Issue 28 (phenotype-penalty model) wires
+these into the simulator.
+
+**B — Sensitivity sweep `trait_weight:<name>` axis.** The existing
+v0.7.16/v0.7.17 sweep engine gains a dynamic axis family for multi-trait
+runs. Operator can sweep e.g. `trait_weight:methane_intensity` across
+`[-1, -0.5, 0, 0.5, 1]` and see how the recommended strategy shifts.
+Closes the Methane pack workflow gap ("what if I move the methane weight
+to -1.0?"). The form's axis dropdown auto-populates the trait-weight
+options when multi-trait state is active.
+
+**C — `/api/version` endpoint.** Returns `{version, commit, build_time}`
+JSON. `breedosCommit` and `breedosBuildTime` overridable at build time
+via `-ldflags="-X main.breedosCommit=<sha> -X main.breedosBuildTime=<rfc3339>"`;
+fall back to "dev"/"unknown" otherwise. Useful for deploy verification
+without grepping HTML.
+
+**D — Form Reset button.** New "↺ Reset" button after the preset row.
+Loads the Balanced default and clears `multiTraitState` (so a methane
+preset gets fully wiped, not just the form fields).
+
+**E — `/datasets` page Generated datasets section.** New "Generated
+datasets — in-memory simulators, no download" section listing
+`holstein_synthetic` with the honesty-layer disclosure ("NOT real bovine
+genotypes...") and external-reference pointers to 1000 Bull Genomes Run 8
+(NCBI public) and Run 9 (CNGB controlled access). Backend
+`datasetAPIResponse.GeneratedDatasets` populated by
+`generatedDatasetsCatalog()`; frontend renders the new section
+conditionally.
+
+6 new tests in `mvp/climate_test.go` cover: known/unknown mode lookup,
+negative-severity rejection, unknown-mode rejection, zero-severity
+acceptance, alphabetical catalog order, anthesis-window correctness for
+the three canonical heat windows.
+
+### Changed
+- Version strings bumped `v0.7.22` → `v0.7.23` across `main.go`, four landing footers, demo kicker, datasets-page kicker.
+
 ## [0.7.22] - 2026-05-28
 
 ### Added — Methane-pack complete (Issues 22–26) + Holstein Issue 19

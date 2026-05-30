@@ -225,6 +225,7 @@ function setFormValues(values) {
   }
   updateBudgetMeter();
   refreshSelectionIndexComposer();
+  refreshSensAxisOptions();
 }
 
 const presets = {
@@ -512,6 +513,14 @@ function clearComparison() {
 function randomizeSeed() {
   byId('seed').value = String(Math.floor(1 + Math.random() * 2147483646));
   markDirty('seed changed');
+}
+
+// v0.7.23 — Issue D. Reset form to the same defaults as the initial
+// page load (balanced preset). Also clears multi-trait state so any
+// methane / multi-trait config is wiped along with the form.
+function resetFormToDefaults() {
+  setFormValues(presets.balanced);
+  setStatus('Form reset to "Balanced default" preset.', 'ok');
 }
 
 function applyPreset(name) {
@@ -1504,6 +1513,9 @@ const SENS_DEFAULT_VALUES = {
   selection_percent: '5, 10, 15, 20, 30',
   generations:       '10, 20, 30, 50, 80'
 };
+// v0.7.23 — Issue B. Default value sets for the dynamic trait_weight
+// axes. The picker auto-fills these when the operator switches the axis.
+const SENS_TRAIT_WEIGHT_DEFAULTS = '-1.0, -0.5, 0.0, 0.5, 1.0';
 const SENS_AXIS_LABEL = {
   heritability:      'h²',
   selection_percent: 'sel %',
@@ -1515,6 +1527,35 @@ const SENS_AXIS_FORMAT = {
   generations:       v => String(Math.round(v))
 };
 let sensRunInFlight = false;
+
+// v0.7.23 — Issue B. Refresh axis dropdown options based on the current
+// multiTraitState. Static axes always present; trait_weight:<name> options
+// appear when multi-trait is active. Preserves the user's current
+// selection if still valid.
+function refreshSensAxisOptions() {
+  const sel = byId('sensAxis');
+  if (!sel) return;
+  const prev = sel.value;
+  const opts = [
+    {key: 'heritability',      label: 'Heritability (h²)'},
+    {key: 'selection_percent', label: 'Selection intensity (%)'},
+    {key: 'generations',       label: 'Generations horizon'}
+  ];
+  const traits = multiTraitState.traits || [];
+  traits.forEach(t => {
+    opts.push({key: 'trait_weight:' + t.name, label: 'Selection weight: ' + t.name});
+  });
+  sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`).join('');
+  if (opts.find(o => o.key === prev)) sel.value = prev;
+  // Update SENS_DEFAULT_VALUES / SENS_AXIS_LABEL / SENS_AXIS_FORMAT for the
+  // dynamic axes so the rest of the sweep code works unchanged.
+  traits.forEach(t => {
+    const key = 'trait_weight:' + t.name;
+    SENS_DEFAULT_VALUES[key] = SENS_TRAIT_WEIGHT_DEFAULTS;
+    SENS_AXIS_LABEL[key] = 'w(' + t.name + ')';
+    SENS_AXIS_FORMAT[key] = v => v.toFixed(2);
+  });
+}
 
 function parseSensValues(text) {
   return String(text || '')
@@ -1673,6 +1714,8 @@ window.addEventListener('DOMContentLoaded', () => {
   if (!runBtn) return;
   runBtn.addEventListener('click', runSimulation);
   byId('clearCompareBtn').addEventListener('click', clearComparison);
+  const resetBtn = byId('resetFormBtn');
+  if (resetBtn) resetBtn.addEventListener('click', resetFormToDefaults);
   byId('randomSeedBtn').addEventListener('click', randomizeSeed);
   byId('exportJsonBtn').addEventListener('click', exportJSON);
   byId('copySummaryBtn').addEventListener('click', copySummary);

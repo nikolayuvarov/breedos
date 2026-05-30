@@ -102,18 +102,68 @@ var sensJobStore = struct {
 
 // validSensitivityAxes maps axis name → predicate that applies the value to
 // a SimRequest. Adding a new axis only requires adding one entry here.
+//
+// v0.7.23 — Issue B. In addition to the static axes below, the sweep
+// supports dynamic `trait_weight:<trait_name>` axes when the run is
+// multi-trait. These are resolved by applyForAxis below, not by direct
+// map lookup. The dropdown in the form lists them at submit time.
 var validSensitivityAxes = map[string]func(*SimRequest, float64){
 	"heritability":      func(r *SimRequest, v float64) { r.Heritability = v },
 	"selection_percent": func(r *SimRequest, v float64) { r.SelectionPercent = v },
 	"generations":       func(r *SimRequest, v float64) { r.Generations = int(v + 0.5) },
 }
 
+const traitWeightAxisPrefix = "trait_weight:"
+
+// applyForAxis applies value to scen for the given axis. Handles both the
+// static catalog and the dynamic trait_weight:<name> family. Returns an
+// error if the axis is unknown or the trait name doesn't match the run.
+func applyForAxis(scen *SimRequest, axis string, value float64) error {
+	if fn, ok := validSensitivityAxes[axis]; ok {
+		fn(scen, value)
+		return nil
+	}
+	if strings.HasPrefix(axis, traitWeightAxisPrefix) {
+		name := strings.TrimPrefix(axis, traitWeightAxisPrefix)
+		if len(scen.Traits) == 0 {
+			return fmt.Errorf("axis %q requires a multi-trait run (req.Traits is empty)", axis)
+		}
+		for i, tr := range scen.Traits {
+			if tr.Name == name {
+				scen.Traits[i].SelectionWeight = value
+				return nil
+			}
+		}
+		return fmt.Errorf("axis %q: trait name %q not found in req.Traits", axis, name)
+	}
+	return fmt.Errorf("axis %q is not recognised", axis)
+}
+
 func validateSensitivityRequest(req SensitivityRequest) error {
-	apply, ok := validSensitivityAxes[req.Axis]
-	if !ok {
+	// v0.7.23 — Issue B. Accept dynamic trait_weight:<name> axes
+	// when req.Base.Traits carries that name; static axes go through the
+	// existing fast-path catalog.
+	axisOK := false
+	if _, ok := validSensitivityAxes[req.Axis]; ok {
+		axisOK = true
+	} else if strings.HasPrefix(req.Axis, traitWeightAxisPrefix) {
+		name := strings.TrimPrefix(req.Axis, traitWeightAxisPrefix)
+		for _, t := range req.Base.Traits {
+			if t.Name == name {
+				axisOK = true
+				break
+			}
+		}
+	}
+	if !axisOK {
 		keys := make([]string, 0, len(validSensitivityAxes))
 		for k := range validSensitivityAxes {
 			keys = append(keys, k)
+		}
+		if len(req.Base.Traits) > 0 {
+			for _, t := range req.Base.Traits {
+				keys = append(keys, traitWeightAxisPrefix+t.Name)
+			}
 		}
 		return fmt.Errorf("axis must be one of %s; got %q", strings.Join(keys, ", "), req.Axis)
 	}
@@ -129,8 +179,15 @@ func validateSensitivityRequest(req SensitivityRequest) error {
 	total := int64(0)
 	for i, v := range req.Values {
 		scen := req.Base
+		// v0.7.23 — deep-copy traits so per-scenario apply doesn't mutate
+		// the shared base when axis = trait_weight:<name>.
+		if len(req.Base.Traits) > 0 {
+			scen.Traits = append([]TraitConfig(nil), req.Base.Traits...)
+		}
 		normalizeRequest(&scen)
-		apply(&scen, v)
+		if err := applyForAxis(&scen, req.Axis, v); err != nil {
+			return fmt.Errorf("scenario %d (%s=%g): %v", i+1, req.Axis, v, err)
+		}
 		strategies := buildStrategyConfigs(scen)
 		if err := validateRequest(scen, len(strategies)); err != nil {
 			return fmt.Errorf("scenario %d (%s=%g) invalid: %v", i+1, req.Axis, v, err)
@@ -228,13 +285,19 @@ func updateSensJob(id string, percent float64, message string, result *Sensitivi
 }
 
 func runSensitivityJob(jobID string, req SensitivityRequest) {
-	apply := validSensitivityAxes[req.Axis]
 	scenarios := make([]SensitivityScenario, 0, len(req.Values))
 	n := len(req.Values)
 	for i, v := range req.Values {
 		scen := req.Base
+		// v0.7.23 — deep-copy traits for trait_weight axis.
+		if len(req.Base.Traits) > 0 {
+			scen.Traits = append([]TraitConfig(nil), req.Base.Traits...)
+		}
 		normalizeRequest(&scen)
-		apply(&scen, v)
+		if err := applyForAxis(&scen, req.Axis, v); err != nil {
+			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g): %v", i+1, req.Axis, v, err), true)
+			return
+		}
 		// Outer progress at scenario boundary: i scenarios are done, current
 		// is about to start. Inner ticks below smoothly fill the gap.
 		baseLabel := fmt.Sprintf("scenario %d/%d: %s=%g", i+1, n, req.Axis, v)
