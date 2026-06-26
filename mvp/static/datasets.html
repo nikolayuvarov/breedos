@@ -19,7 +19,7 @@
 
   <main class="wrap section">
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">v0.7.24 — datasets registry</div>
+      <div class="kicker">v0.7.25 — datasets registry</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Curated public wheat datasets</h1>
       <p class="lede">
         Real wheat genotype data that BreedOS can load as a founder population. Below: original archive size, size currently deployed on the server, download source, license, and a one-line content summary. Small datasets are mirrored fully; large datasets are truncated to the first 100 MB on the server unless an explicit full-upload deploy was made.
@@ -59,7 +59,7 @@
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.24 — decision-layer simulator, not a wet-lab protocol. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.25 — decision-layer simulator, not a wet-lab protocol. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -122,7 +122,7 @@
         status.textContent = (data.description || '') + ' Truncation cap for large datasets: ' + (data.deploy_truncate_mb || '?') + ' MB.';
         status.className = 'status ok';
         wrap.hidden = false;
-        // v0.7.24 — Issue E. Render the generated-datasets section.
+        // v0.7.25 — Issue E. Render the generated-datasets section.
         const gen = data.generated_datasets || [];
         const genWrap = document.getElementById('generatedDatasetsCard');
         const genList = document.getElementById('generatedDatasetsList');

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS Theory — Promptogenesis (prompts as DNA, responses as phenotypes)</title>
+  <meta name="description" content="The BreedOS theory page: prompts as genotypes, LLM + context as developmental environment, responses as phenotypes. Mapping table, glossary, module roadmap, sources.">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .theory dl { display: grid; grid-template-columns: minmax(180px, 220px) 1fr; gap: 6px 18px; margin: 0; }
+    .theory dt { font-weight: 700; color: var(--accent); align-self: start; }
+    .theory dd { margin: 0 0 6px; color: var(--text); }
+    .theory dd .bio { color: var(--muted); font-size: 13px; display: block; }
+    .theory table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .theory table th, .theory table td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    .theory table th { color: var(--accent2); }
+    .theory .term-group h3 { margin-top: 28px; color: var(--accent2); font-size: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .theory .module-row { display: grid; grid-template-columns: 80px 1fr 100px; gap: 16px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .theory .module-row .ver { font-weight: 700; color: var(--accent); }
+    .theory .module-row .status { color: var(--muted); font-size: 13px; text-align: right; }
+    .theory :target { background: rgba(143, 255, 209, 0.07); border-radius: 4px; padding: 2px 6px; margin: -2px -6px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="/">Landing</a>
+      <a href="/demo">Demo</a>
+      <a href="/datasets">Datasets</a>
+      <a class="active" href="/theory">Theory</a>
+    </div>
+  </nav>
+
+  <main class="wrap section theory">
+    <div class="card" style="margin-bottom:18px">
+      <div class="kicker">BreedOS Theory — Promptogenesis</div>
+      <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Prompts are not blueprints.</h1>
+      <p class="lede">
+        A prompt does not contain the answer. DNA does not contain the organism. Both are compressed sequences interpreted by a developmental environment — and that observation, taken seriously, gives the BreedOS engine a second substrate to operate on. This page documents the working theory, the glossary, the module roadmap, and the sources.
+      </p>
+      <p class="note">
+        This direction is operational, not metaphorical: every term below maps to a measurable quantity, every module to a concrete simulator surface. Issues live on the <code>issues-promptbio/</code> board; source dialogue lives in <code>ingest-done/</code>.
+      </p>
+    </div>
+
+    <div class="card" id="mapping">
+      <h2 style="margin-top:0">The mapping</h2>
+      <p>The analogy is exact along one axis and breaks along another. Along the <strong>sequence-interpreted-by-environment</strong> axis, prompts and DNA behave identically: neither is a blueprint; both specify a space of possible developments; both have reaction norms across environments; both can mutate, recombine, drift, and be selected. Along the <strong>self-replication</strong> axis, the analogy breaks: prompts do not metabolise or reproduce themselves — they require an external evaluation-and-mutation loop. The BreedOS engine supplies that loop.</p>
+
+      <table>
+        <thead>
+          <tr><th>Biology</th><th>LLM scheme</th><th>Meaning</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>DNA / genotype</td><td>Prompt / prompt-genotype</td><td>Compressed sequence not equal to final object; specifies the space of possible developments.</td></tr>
+          <tr><td>Cellular machinery</td><td>Model weights + architecture + decoder</td><td>"Reads" the sequence, turns it into a process.</td></tr>
+          <tr><td>Environment</td><td>Context: system prompt, history, tools, memory, RAG, temperature</td><td>Conditions determining which phenotype develops.</td></tr>
+          <tr><td>Gene expression</td><td>Activations, attention, latent features, selected behaviour patterns</td><td>Not the whole model "expresses" at once; the prompt activates a part of capabilities.</td></tr>
+          <tr><td>Development</td><td>Inference / token-by-token unfolding / agent loop</td><td>Process unfolding from initial condition into form.</td></tr>
+          <tr><td>Phenotype</td><td>Answer, reasoning trajectory, tool actions, artifact</td><td>Observable result.</td></tr>
+          <tr><td>Reaction norm</td><td>Prompt reaction norm</td><td>Range of answers one prompt gives across models, contexts, temperatures.</td></tr>
+          <tr><td>Mutation</td><td>Prompt change</td><td>Small changes may be neutral, beneficial, or radical.</td></tr>
+          <tr><td>Selection / fitness</td><td>Evals, user feedback, reward, benchmark score</td><td>Selection of prompts by output quality.</td></tr>
+          <tr><td>Epigenetic / contextual modulation</td><td>Memory, policies, retrieved facts, system constraints</td><td>Overlays changing expression without changing the prompt.</td></tr>
+          <tr><td>Canalisation / attractors</td><td>Model defaults, safety rails, default styles</td><td>Different prompts converge to similar answers.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="card" id="modules">
+      <h2 style="margin-top:0">Module roadmap</h2>
+      <p>Six modules build a five-layer system. v0.1–v0.3 form the smallest end-to-end usable surface. v0.4 and v0.5 add environmental and adversarial dimensions. v0.6 is sketched, deferred until earlier modules ship measurements.</p>
+
+      <div class="module-row"><span class="ver">v0.1</span><div><strong>Prompt Genome Mapper.</strong> Decompose a single prompt into 14 functional loci; surface missing genes, conflicts, expected phenotype, mutation plan.</div><span class="status">Issue 01 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.2</span><div><strong>Prompt Genome Diff.</strong> Compare ancestor and descendant prompt; emit genomic diff, mutation ledger, fitness delta, regression analysis.</div><span class="status">Issue 02 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.3</span><div><strong>Prompt Evolution Loop.</strong> Grow a population through mutation, evaluation, selection across niches; produce a prompt-family lineage tree.</div><span class="status">Issue 03 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.4</span><div><strong>Prompt Ecology Analyzer.</strong> Map prompt fitness against 8 habitats (clean / sparse / noisy / conflicting / tool-rich / tool-poor / production / exploration); surface context-rot risk and deployment recommendations.</div><span class="status">Issue 04 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.5</span><div><strong>Prompt Immunology.</strong> Score a prompt against 14 pathogen types (injection, false fact, stale data, noise, contradiction, format disruptor, drift attractor, …); produce an immunised prompt and a tunable autoimmune-disorder threshold.</div><span class="status">Issue 05 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.6</span><div><strong>Prompt Metabolism (sketched).</strong> How a prompt-system consumes, processes, and transforms information into artifacts. Deferred until v0.1–v0.5 ship real measurements.</div><span class="status">Issue 06 — Deferred</span></div>
+      <div class="module-row"><span class="ver">07</span><div><strong>Engine extension (substrate).</strong> Factor the BreedOS engine substrate out of <code>main.go</code>; add a <code>promptbio</code> package; ship a substrate switch so the existing UI renders either biological or prompt-organism simulations uniformly. Biological path stays bit-identical.</div><span class="status">Issue 07 — Todo (P1)</span></div>
+    </div>
+
+    <div class="card" id="glossary">
+      <h2 style="margin-top:0">Glossary</h2>
+      <p>One canonical place. Every term has a stable anchor (<code>#term-&lt;slug&gt;</code>). Issue specs link here.</p>
+
+      <div class="term-group">
+        <h3>Core</h3>
+        <dl>
+          <dt id="term-prompt-genotype">prompt-genotype</dt><dd>Heritable textual structure (goal, constraints, examples, method, format) specifying conditions for response development. <span class="bio">Biology: genotype.</span></dd>
+          <dt id="term-response-phenotype">response-phenotype</dt><dd>Observable output: text, structure, tone, citations, errors, reasoning trajectory, tool actions. <span class="bio">Biology: phenotype.</span></dd>
+          <dt id="term-context-ecology">context-ecology</dt><dd>The full environment around a prompt: model, system instructions, history, memory, tools, retrieved documents, decoder settings, user behaviour, safety policies. <span class="bio">Biology: developmental environment.</span></dd>
+          <dt id="term-promptogenesis">promptogenesis</dt><dd>The process of a prompt-genotype unfolding into a response-phenotype through token-by-token development in the model-context environment. <span class="bio">Biology: ontogenesis.</span></dd>
+          <dt id="term-prompt-reaction-norm">prompt reaction norm</dt><dd>The distribution of phenotypes for a single prompt across different models, contexts, temperatures, tool sets. <span class="bio">Biology: reaction norm.</span></dd>
+        </dl>
+      </div>
+
+      <div class="term-group">
+        <h3>Evolutionary</h3>
+        <dl>
+          <dt id="term-prompt-mutation">prompt mutation</dt><dd>A small change to a prompt (word, phrase, block); may be neutral, beneficial, or radical. Six classes: addition, deletion, substitution, amplification, suppression, modularisation.</dd>
+          <dt id="term-prompt-penetrance">prompt penetrance</dt><dd>Probability that a desired trait actually appears in the response (e.g. P(output is valid JSON)).</dd>
+          <dt id="term-prompt-pleiotropy">prompt pleiotropy</dt><dd>One phrase influences multiple phenotype traits (e.g. "explain for a 12-year-old" affects vocabulary, tone, depth, length, examples simultaneously).</dd>
+          <dt id="term-prompt-canalization">prompt canalisation</dt><dd>A stable developmental pathway: rigid structure, clear schema, examples, low temperature → consistent phenotype.</dd>
+          <dt id="term-prompt-plasticity">prompt plasticity</dt><dd>Ability of one prompt to produce useful different phenotypes in different environments.</dd>
+          <dt id="term-prompt-epistasis">prompt epistasis</dt><dd>The effect of one prompt-gene depends on another; combined instructions may conflict or amplify.</dd>
+          <dt id="term-prompt-niche">prompt niche</dt><dd>Environment + task class where a prompt achieves high fitness.</dd>
+          <dt id="term-prompt-fitness">prompt fitness</dt><dd>Quality score based on task-specific metrics (accuracy, clarity, actionability) in a given environment.</dd>
+          <dt id="term-prompt-robustness">prompt robustness</dt><dd>Stability of output under prompt mutations, model changes, context shifts, temperature variation.</dd>
+          <dt id="term-prompt-evolvability">prompt evolvability</dt><dd>Ease of improving a prompt through small mutations; mutational sensitivity.</dd>
+          <dt id="term-prompt-drift">prompt drift</dt><dd>Gradual behaviour shift accumulated through history, memory, refined constraints.</dd>
+          <dt id="term-prompt-lineage">prompt lineage</dt><dd>The sequence of prompt versions linked by mutations and selection events.</dd>
+          <dt id="term-prompt-recombination">prompt recombination</dt><dd>Crossing strong genes from multiple prompts to produce a new prompt that inherits both.</dd>
+          <dt id="term-prompt-population">prompt population</dt><dd>A maintained set of prompt variants, often specialised across niches.</dd>
+          <dt id="term-soft-prompt-genotype">soft prompt-genotype</dt><dd>An embedding-vector prompt learned via prompt-tuning instead of written in text. Trades interpretability for optimisability.</dd>
+        </dl>
+      </div>
+
+      <div class="term-group">
+        <h3>Ecological</h3>
+        <dl>
+          <dt id="term-habitat">habitat</dt><dd>A concrete environment: model, instruction hierarchy, history, context window, tools, safety layer.</dd>
+          <dt id="term-context-carrying-capacity">context carrying capacity</dt><dd>Maximum useful context before degradation (goal dilution, instruction loss, attention fragmentation).</dd>
+          <dt id="term-context-rot">context rot</dt><dd>Response-quality degradation caused by an overloaded or contaminated context window.</dd>
+          <dt id="term-instruction-dominance">instruction dominance</dt><dd>Priority hierarchy: system &gt; developer &gt; user &gt; history &gt; documents &gt; model priors.</dd>
+          <dt id="term-keystone-instruction">keystone instruction</dt><dd>A short phrase with disproportionate stabilising effect (e.g. "mark assumptions before answering").</dd>
+          <dt id="term-ecological-conflict">ecological conflict</dt><dd>Clash between prompt and environment (e.g. prompt instruction contradicting a system instruction).</dd>
+          <dt id="term-context-parasite">context parasite</dt><dd>A context fragment consuming attention and tokens while degrading the answer (noise, obsolete data, deeply nested boilerplate).</dd>
+          <dt id="term-active-context">active context</dt><dd>Context directly relevant to the current task.</dd>
+          <dt id="term-archive-context">archive context</dt><dd>Useful history that does not govern the current answer.</dd>
+          <dt id="term-context-quarantine">context quarantine</dt><dd>Isolation of suspicious, outdated, or non-compliant elements before they reach the model.</dd>
+          <dt id="term-tool-symbiosis">tool symbiosis</dt><dd>Synergy between a prompt and a tool (e.g. a research prompt + web-search).</dd>
+        </dl>
+      </div>
+
+      <div class="term-group">
+        <h3>Immunological</h3>
+        <dl>
+          <dt id="term-prompt-immune-system">prompt immune system</dt><dd>Layers of defences recognising threats, filtering data from instructions, quarantining risks, validating output.</dd>
+          <dt id="term-prompt-pathogen">prompt pathogen</dt><dd>An environment element that worsens the response: injection, false fact, stale data, contradiction, noise, format disruptor, goal-drift attractor.</dd>
+          <dt id="term-immune-gene">immune gene</dt><dd>A defensive instruction inside the prompt: boundary gene, assumption gene, uncertainty gene, conflict gene, quarantine gene, validation gene.</dd>
+          <dt id="term-boundary-immunity">boundary immunity</dt><dd>Separating instructions from data so a payload cannot impersonate an instruction.</dd>
+          <dt id="term-assumption-control">assumption control</dt><dd>Marking unknown data and avoiding fabrication.</dd>
+          <dt id="term-autoimmune-disorder">autoimmune disorder</dt><dd>An over-protective prompt rejecting valid tasks, asking endless clarifying questions, suppressing creativity.</dd>
+          <dt id="term-immunity-fitness">immunity fitness</dt><dd>Quality score accounting jointly for task success, defence cost, and efficiency.</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card" id="sources">
+      <h2 style="margin-top:0">Sources</h2>
+      <p>The full source thread lives in <code>ingest-done/00..09-prompt-dna.md.done</code> (Russian-language dialogue). External references that the thread cites and that the modules build on:</p>
+      <ul class="clean">
+        <li><a href="https://arxiv.org/abs/2309.16797" rel="noopener">Promptbreeder</a> — self-referential prompt evolution; the closest published prior art for Issue 03.</li>
+        <li><a href="https://arxiv.org/abs/2309.08532" rel="noopener">EvoPrompt</a> — evolutionary algorithms over prompts; mutation and crossover operators used in Issue 03.</li>
+        <li><a href="https://openreview.net/forum?id=WCNAcIKREG" rel="noopener">Prompt Genotyping</a> — quantifies prompts as 14-feature genomes; closest prior art for Issue 01.</li>
+        <li><a href="https://arxiv.org/abs/2211.01910" rel="noopener">Automatic Prompt Engineer (APE)</a> — treats instructions as programs evolved by score.</li>
+        <li><a href="https://arxiv.org/abs/2212.06094" rel="noopener">Prompting Is Programming</a> — formalises prompts as programs with control flow and constraints.</li>
+        <li><a href="https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents" rel="noopener">Anthropic — Effective context engineering for AI agents</a> — the working definition of context-engineering used here.</li>
+        <li><a href="https://www.langchain.com/blog/context-engineering-for-agents" rel="noopener">LangChain — Context Engineering for agents</a> — operational checklist for habitat design.</li>
+        <li><a href="https://portal.fis.tum.de/en/publications/transformers-and-genome-language-models/" rel="noopener">Transformers and genome language models</a> — the reverse direction: DNA as a language for LLMs.</li>
+        <li><a href="https://github.com/NikolayUvarov/breedos" rel="noopener">BreedOS source</a> — the engine this theory runs on.</li>
+      </ul>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.7.25 — theory surface. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+  </footer>
+</body>
+</html>

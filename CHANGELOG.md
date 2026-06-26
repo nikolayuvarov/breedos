@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.25] - 2026-06-26
+
+### Added — Promptbio direction scaffolded (Shape 3 + Shape 1 + Shape 2 foundation)
+
+Opens a second simulation direction in BreedOS alongside biological
+breeding: **prompt-organism simulation**. Prompts are treated as
+DNA-like genotypes, LLM + context as the developmental environment,
+responses as phenotypes. The BreedOS engine kernel (selection, drift,
+mutation, recombination, multi-trait Pareto) is the same; the substrate
+is what varies.
+
+This release ships the **scaffolding** — board, theory page, type
+surface, ingest lifecycle — with no runtime behaviour changes. The
+biological simulation path is bit-identical to v0.7.24.
+
+**Shape 3 — `issues-promptbio/` execution board.** New
+[`issues-promptbio/`](issues-promptbio/) board with 10 files:
+
+- `00-README.md` — board purpose, lifecycle, priority order.
+- `01-prompt-genome-mapper.md` — v0.1 module (14-locus decomposition).
+- `02-prompt-genome-diff.md` — v0.2 module (ancestor↔descendant diff).
+- `03-prompt-evolution-loop.md` — v0.3 module (population selection).
+- `04-prompt-ecology-analyzer.md` — v0.4 module (8 habitats, context-rot).
+- `05-prompt-immunology-analyzer.md` — v0.5 module (14 pathogen types).
+- `06-prompt-metabolism.md` — v0.6 module (sketched, deferred).
+- `07-engine-extension-prompt-organism-mode.md` — substrate foundation (P1).
+- `08-experiment-templates.md` — 9 measurement harnesses.
+- `09-glossary-as-product.md` — glossary maintained on /theory.
+
+**Shape 1 — `/theory` public page.** New static page
+`breedos/mvp/static/theory.html` served at
+[`/theory`](https://www.breedos.org/theory) with: mapping table
+(biology ↔ LLM, 11 rows from the source thread), module roadmap (7
+rows), and a stable-anchor glossary (~50 terms grouped into core /
+evolutionary / ecological / immunological). Issue specs deep-link to
+glossary anchors. Nav link added to landing page (`index.html`) and
+demo page.
+
+**Shape 2 — promptbio type surface.** New
+`breedos/mvp/promptbio.go` ships the substrate type surface:
+`PromptGenotype`, `PromptLocus` constants (14 loci), `LocusStatus`,
+`LocusEntry`, `PhenotypePrediction`, `PromptMutation` + the six
+mutation kinds, `TestSpec`, `ConflictPair`, `PromptbioSimRequest`. No
+runtime behaviour; no engine wiring; no HTTP route yet. The next
+session picks up implementation at Issue 07.
+
+**Ingest lifecycle convention.** Raw theory threads land in
+`ingest/<NN>-<theme>.md`; after digestion into a board they move to
+`ingest-done/<NN>-<theme>.md.done`. The first batch (10 files of theme
+`prompt-dna`) is now in `ingest-done/`. CLAUDE.md documents the
+convention. The lifecycle parallels the existing
+`issues-*` → `issues-*-done/` convention.
+
+### Notes
+
+- Biological simulation path unchanged. No new tests required for the
+  biological substrate; existing 13 climate tests still pass.
+- The promptbio.go file is types-only and compiles cleanly with no
+  imports beyond what was already in the package.
+- Three new files (`10`/`11`/`12-prompt-dna.md`) arrived in `ingest/`
+  during this release cycle and remain there pending the next
+  digestion cycle.
+
 ## [0.7.24] - 2026-06-26
 
 ### Added — Climate Issue 28: per-stage phenotype penalty wired into simulator
