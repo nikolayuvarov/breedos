@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.24] - 2026-06-26
+
+### Added — Climate Issue 28: per-stage phenotype penalty wired into simulator
+
+Builds on the v0.7.23 Climate Issue 27 catalog foundation. The simulator
+now accepts a `climate` field on `/api/simulate` carrying a
+`ClimateScenario` (mode + severity) and applies a phenotype penalty to
+recorded gain.
+
+**Penalty model.** `mvp/climate.go` adds `climateModePenalty`:
+- `normal` = 0.00
+- `heat_burst_booting` = 0.20
+- `heat_burst_anthesis` = 0.32 (Khan et al. 2024 anthesis triplet)
+- `heat_grain_filling` = 0.46 (Khan et al. 2024 grain-fill triplet)
+- `combined_postflowering` = 0.59 (Khan et al. 2024 combined triplet)
+- `prolonged_heat` = 0.30
+- `drought_terminal` = 0.40
+- `salinity_chronic` = 0.20
+
+Penalty applied as `phenotype × (1 - coefficient × severity)`, clamped to
+`[0, 0.95]` (cannot zero out the population).
+
+**Rank-preserving by design.** The same multiplier is applied to every
+individual's recorded phenotype, so candidate ordering and selection
+decisions are unchanged — only the recorded gain trajectory drops. This
+matches the operator-facing question Issue 28 answers ("if a heat burst
+hits, how much of the projected gain do we lose?") without conflating
+G×E with selection-strategy comparison.
+
+**Hooks.** `applyClimatePenaltyToMetrics` runs in `aggregateReplicates`
+after `populateNeTrajectory(metrics)`, and in `runMultiTraitSimulation`
+across `agg.PerTraitMetrics` so multi-trait runs (Holstein-pack,
+Methane-pack) also see the penalty.
+
+**Backward compat.** `req.Climate = nil` is bit-identical to v0.7.23
+behaviour.
+
+### Tests
+
+13 tests in `climate_test.go` (5 inherited from Issue 27 +
+8 new for Issue 28):
+
+- `TestApplyClimatePenalty_CalibrationTriplet` verifies the
+  Khan et al. 2024 triplet (68/54/41 from baseline 100).
+- `TestApplyClimatePenalty_SeverityScaling` verifies linear scaling.
+- `TestApplyClimatePenalty_ClampedAt95Percent` verifies the floor.
+- `TestApplyClimatePenalty_NilScenarioPassthrough` verifies bit-identity.
+- `TestRunSimulation_ClimatePenaltyDropsRecordedGain` end-to-end verifies
+  recorded gain ratio ≈ 0.54 under `combined_postflowering`.
+- `TestRunSimulation_NoClimateIsBitIdenticalToBaseline` end-to-end
+  verifies the `Climate = nil` path.
+
+### Issue closed
+
+- `issues-breedos/28-climate-phenotype-penalty.md` →
+  `issues-breedos-done/28-climate-phenotype-penalty.md.done`.
+
 ## [0.7.23] - 2026-05-28
 
 ### Added — Five small improvements (A/B/C/D/E)

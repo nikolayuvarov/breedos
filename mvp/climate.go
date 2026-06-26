@@ -170,6 +170,79 @@ func ValidateClimateScenario(scen *ClimateScenario) error {
 	return nil
 }
 
+// v0.7.24 — Issue 28. Penalty coefficient per mode, calibrated so that
+// severity = 1.0 ("moderate") reproduces the published yield-loss figure.
+// Reference: Khan et al. 2024 in MDPI Plants for the 32% / 46% / 59%
+// triplet (anthesis / grain-filling / combined post-flowering). Other modes
+// calibrated from per-mode literature in the file header.
+//
+// Runtime: penalty = climateModePenalty[mode] × scenario.Severity, clamped
+// to [0, 0.95] so phenotypes never collapse to zero in pathological cases.
+var climateModePenalty = map[string]float64{
+	"normal":                 0.00,
+	"heat_burst_anthesis":    0.32, // Khan 2024
+	"heat_burst_booting":     0.20, // smaller than anthesis (spike fertility)
+	"heat_grain_filling":     0.46, // Khan 2024
+	"combined_postflowering": 0.59, // Khan 2024 (heat + drought)
+	"prolonged_heat":         0.30, // less severe than combined
+	"drought_terminal":       0.40, // moderate; severe at sev≈1.5 → 0.60
+	"salinity_chronic":       0.20, // ~20% at moderate EC
+}
+
+// climateMaxPenalty caps the multiplicative reduction so phenotypes can't
+// collapse to zero — keeps the simulator numerically sane under
+// pathological inputs.
+const climateMaxPenalty = 0.95
+
+// climatePenaltyFor returns the multiplicative penalty (in [0, climateMaxPenalty])
+// for the given scenario. Returns 0 for nil / normal / unknown mode.
+func climatePenaltyFor(scenario *ClimateScenario) float64 {
+	if scenario == nil || scenario.Mode == "" || scenario.Mode == "normal" {
+		return 0
+	}
+	coef, ok := climateModePenalty[scenario.Mode]
+	if !ok {
+		return 0
+	}
+	p := coef * scenario.Severity
+	if p < 0 {
+		return 0
+	}
+	if p > climateMaxPenalty {
+		return climateMaxPenalty
+	}
+	return p
+}
+
+// ApplyClimatePenalty returns phenotype × (1 − penalty) for the given
+// scenario. Backward-compatible: nil scenario, empty mode, or "normal" all
+// return the phenotype unchanged.
+func ApplyClimatePenalty(phenotype float64, scenario *ClimateScenario) float64 {
+	p := climatePenaltyFor(scenario)
+	if p == 0 {
+		return phenotype
+	}
+	return phenotype * (1 - p)
+}
+
+// applyClimatePenaltyToMetrics scales TraitMean and GeneticGain on every
+// MetricPoint in the slice by (1 − penalty). Other fields (Diversity,
+// Inbreeding, AlleleDrift, RareUsefulLost, FixedLoci, Ne) are population-
+// genetics quantities unaffected by climate stress and stay untouched.
+// Uniform-across-population assumption: penalty preserves rank, so selection
+// is unaffected; only recorded mean / gain trajectories drop.
+func applyClimatePenaltyToMetrics(metrics []MetricPoint, scenario *ClimateScenario) {
+	p := climatePenaltyFor(scenario)
+	if p == 0 {
+		return
+	}
+	factor := 1 - p
+	for i := range metrics {
+		metrics[i].TraitMean = round4(metrics[i].TraitMean * factor)
+		metrics[i].GeneticGain = round4(metrics[i].GeneticGain * factor)
+	}
+}
+
 // ClimateModesCatalog returns a JSON-friendly snapshot of all catalog
 // entries — useful for a UI dropdown or /api endpoint. Order is by code
 // alphabetical so the UI gets a stable list.

@@ -482,6 +482,12 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		if len(reps[cfg.Code]) > 0 {
 			agg.PerTraitMetrics = reps[cfg.Code][0].PerTraitMetrics
 			agg.SelectionIndex = reps[cfg.Code][0].SelectionIndex
+			// v0.7.24 — Issue 28. Apply climate penalty to each per-trait
+			// trajectory so PerTraitGain (computed from the last point of
+			// each trajectory below) and chart values reflect the penalty.
+			for t := range agg.PerTraitMetrics {
+				applyClimatePenaltyToMetrics(agg.PerTraitMetrics[t], req.Climate)
+			}
 		}
 		results = append(results, agg)
 	}
