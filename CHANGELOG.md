@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.26] - 2026-06-27
+
+### Added — Minimal upload workflow (Issue 05)
+
+Closes the `issues-breedos/05-minimal-upload-workflow.md` P1 issue. The
+narrow, honest CSV-upload path the issue called for.
+
+**New `POST /api/upload`.** Multipart/form-data endpoint accepting up
+to four CSVs in one bundle:
+
+- `genotype` (required) — same format as the built-in dataset loader:
+  header `id,marker_1,...,marker_N`, values `0`/`1`/`2`. Becomes the
+  founder population.
+- `phenotype` (optional) — `id,<trait_name>`. Parsed; surfaced in the
+  summary with min/max/mean. Not yet consumed by the engine because the
+  simulator generates phenotypes from its QTL model.
+- `pedigree` (optional) — `id,sire,dam`. Parsed; surfaced with row
+  count + unique-sire / unique-dam counts. Not consumed (simulator
+  builds its own pedigree from random mating).
+- `edits` (optional) — `marker_id,target_allele,expected_effect[,note]`.
+  Parsed; full content round-tripped to the summary. Not consumed
+  (simulator uses the existing `crispr_edits` counter, not marker-
+  level edits).
+
+Response: JSON `{upload_id, summary, note}` where `summary` is an
+`UploadedDataset` with per-table fields plus explicit `used_by_engine`
+and `ignored_by_engine` lists so the operator sees exactly what is
+and isn't being used.
+
+**Engine wiring.** New `Upload` field on `SimRequest`. When set, the
+simulator looks up the upload (in-memory cache, 1-hour TTL, never
+persisted), uses its genotype as the founder population, and adds an
+explicit "EARLY IMPORT — not production integration" note to the
+Decision Report. `Upload` takes precedence over `Dataset`. Missing or
+expired upload returns a clear 400.
+
+**Demo UI.** New "Uploaded CSVs (your data)" option in the founder-
+population dropdown reveals a dashed-border upload card with:
+- four file pickers (genotype required, others optional);
+- "Upload & validate" button calling `/api/upload`;
+- inline import summary showing per-table row/marker/trait counts;
+- prominent `EARLY IMPORT — not production integration` label;
+- ephemeral disclosure (`~1 hour, never persisted`);
+- example links to the embedded toy fixtures.
+
+**Toy fixtures (embedded).** Four CSVs under `mvp/fixtures/upload-toy/`:
+- `genotype.csv` — 30 individuals × 80 markers.
+- `phenotype.csv` — 30 trait values.
+- `pedigree.csv` — 30 rows with 3 sires × 4 dams.
+- `edits.csv` — 3 candidate edits.
+
+Served at `/upload-fixture/<name>.csv` so the demo's example links
+work on a fresh install with no external setup.
+
+### Tests — 18 new
+
+`upload_test.go` covers:
+- Genotype parser: fixture happy path, out-of-range values, non-integer
+  cells, column-count mismatch.
+- Phenotype parser: fixture happy path, wrong header, non-numeric trait.
+- Pedigree parser: fixture happy path, missing dam column.
+- Edits parser: fixture happy path, out-of-range allele.
+- Upload cache: put/get roundtrip, TTL eviction, capacity eviction.
+- `runSimulation` with an uploaded genotype: verifies `PopulationSize`
+  and `Markers` come from the upload; verifies the "Founder population
+  came from upload" honesty note appears in `resp.Notes`; verifies
+  unknown upload id is rejected with a clear error.
+- `uploadHandler` HTTP: multipart happy path (200 + `upload_id`),
+  missing genotype (400).
+
+Full suite green (existing climate and biology paths unchanged).
+
+### Issue closed
+
+- `issues-breedos/05-minimal-upload-workflow.md` →
+  `issues-breedos-done/05-minimal-upload-workflow.md.done`.
+
+### Non-goals (per the issue, deferred)
+
+- BrAPI integration.
+- Large-file handling beyond the 16 MB per-file cap.
+- Secure multi-user storage (uploads are in-memory, single-process).
+- Full genotype imputation / QC.
+- Wiring uploaded phenotypes/pedigree/edits into the engine.
+
 ## [0.7.25] - 2026-06-26
 
 ### Added — Promptbio direction scaffolded (Shape 3 + Shape 1 + Shape 2 foundation)

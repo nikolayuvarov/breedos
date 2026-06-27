@@ -66,9 +66,16 @@ function numberValue(id) {
   return Number.isFinite(v) ? v : 0;
 }
 
+// v0.7.26 — Issue 05. Holds the in-memory upload id returned by /api/upload.
+// Cleared when the user picks a non-upload dataset.
+let uploadState = {id: null, summary: null};
+
 function requestFromForm() {
+  const dsVal = (byId('dataset') && byId('dataset').value) || 'synthetic';
+  const useUpload = dsVal === '__upload__' && uploadState.id;
   return {
-    dataset: (byId('dataset') && byId('dataset').value) || 'synthetic',
+    dataset: useUpload ? '' : dsVal,
+    upload: useUpload ? uploadState.id : '',
     seed: Math.trunc(numberValue('seed')),
     population_size: Math.trunc(numberValue('population_size')),
     markers: Math.trunc(numberValue('markers')),
@@ -1762,5 +1769,93 @@ window.addEventListener('DOMContentLoaded', () => {
     sensRunBtn.addEventListener('click', runSensitivitySweep);
     updateSensBudgetMeter();
   }
+  // v0.7.26 — Issue 05. Upload UI: show/hide the upload card, handle the
+  // multipart POST, render the import summary.
+  setupUploadUI();
   setStatus('Ready. Press Run simulation to calculate.', '');
 });
+
+function setupUploadUI() {
+  const datasetSel = byId('dataset');
+  const uploadField = byId('uploadField');
+  const uploadBtn = byId('uploadBtn');
+  if (!datasetSel || !uploadField || !uploadBtn) return;
+
+  const syncVisibility = () => {
+    const useUpload = datasetSel.value === '__upload__';
+    uploadField.hidden = !useUpload;
+    if (!useUpload) {
+      uploadState = {id: null, summary: null};
+      const status = byId('uploadStatus');
+      if (status) {
+        status.textContent = 'no upload yet';
+        status.style.color = '';
+      }
+      const sum = byId('uploadSummary');
+      if (sum) { sum.hidden = true; sum.innerHTML = ''; }
+    }
+  };
+  datasetSel.addEventListener('change', syncVisibility);
+  syncVisibility();
+
+  uploadBtn.addEventListener('click', async () => {
+    const genoEl = byId('uploadGenotype');
+    if (!genoEl || !genoEl.files || !genoEl.files[0]) {
+      alert('Genotype CSV is required.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('genotype', genoEl.files[0]);
+    for (const [field, id] of [['phenotype','uploadPhenotype'],['pedigree','uploadPedigree'],['edits','uploadEdits']]) {
+      const el = byId(id);
+      if (el && el.files && el.files[0]) fd.append(field, el.files[0]);
+    }
+    const status = byId('uploadStatus');
+    if (status) { status.textContent = 'uploading...'; status.style.color = ''; }
+    uploadBtn.disabled = true;
+    try {
+      const res = await fetch('/api/upload', {method: 'POST', body: fd});
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || ('HTTP ' + res.status));
+      }
+      const data = await res.json();
+      uploadState = {id: data.upload_id, summary: data.summary};
+      renderUploadSummary(data.summary, data.upload_id);
+      if (status) { status.textContent = 'upload ready ✓ (' + data.upload_id + ')'; status.style.color = 'var(--ok)'; }
+      markDirty('upload changed');
+    } catch (e) {
+      if (status) { status.textContent = 'upload failed: ' + e.message; status.style.color = 'var(--danger)'; }
+      uploadState = {id: null, summary: null};
+    } finally {
+      uploadBtn.disabled = false;
+    }
+  });
+}
+
+function renderUploadSummary(summary, id) {
+  const el = byId('uploadSummary');
+  if (!el) return;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const parts = [];
+  if (summary.genotype) {
+    parts.push('<div><strong>Genotype</strong>: ' + summary.genotype.individuals + ' individuals × ' + summary.genotype.markers + ' markers (sample ids: ' + summary.genotype.sample_ids.map(esc).join(', ') + ')</div>');
+  }
+  if (summary.phenotype) {
+    parts.push('<div><strong>Phenotype</strong>: ' + summary.phenotype.rows + ' rows, trait <code>' + esc(summary.phenotype.trait_name) + '</code> ∈ [' + summary.phenotype.min.toFixed(3) + ', ' + summary.phenotype.max.toFixed(3) + '], mean ' + summary.phenotype.mean.toFixed(3) + '</div>');
+  }
+  if (summary.pedigree) {
+    parts.push('<div><strong>Pedigree</strong>: ' + summary.pedigree.rows + ' rows, ' + summary.pedigree.unique_sires + ' unique sires × ' + summary.pedigree.unique_dams + ' unique dams</div>');
+  }
+  if (summary.edits) {
+    parts.push('<div><strong>Edits</strong>: ' + summary.edits.rows + ' candidate edits</div>');
+  }
+  if (summary.used_by_engine && summary.used_by_engine.length) {
+    parts.push('<div style="margin-top:6px;"><strong style="color:var(--ok)">Used by engine:</strong> ' + summary.used_by_engine.map(esc).join('; ') + '</div>');
+  }
+  if (summary.ignored_by_engine && summary.ignored_by_engine.length) {
+    parts.push('<div><strong style="color:var(--warn)">Loaded but NOT consumed by engine:</strong><ul style="margin:4px 0 0 18px; padding:0;">' + summary.ignored_by_engine.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul></div>');
+  }
+  el.innerHTML = parts.join('');
+  el.hidden = false;
+}

@@ -1,0 +1,4 @@
+marker_id,target_allele,expected_effect,note
+marker_5,2,0.45,knock-in beneficial allele at marker_5
+marker_12,0,-0.30,knock-out unfavourable allele at marker_12
+marker_27,2,0.20,reinforcement of partially fixed favourable allele

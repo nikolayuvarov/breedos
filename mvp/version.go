@@ -17,7 +17,7 @@ import (
 )
 
 var (
-	breedosVersion   = "v0.7.25"
+	breedosVersion   = "v0.7.26"
 	breedosCommit    = "dev"
 	breedosBuildTime = "unknown"
 )

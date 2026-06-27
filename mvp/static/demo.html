@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.25 — Theory page + promptbio board scaffolded</div>
+      <div class="kicker">MVP v0.7.26 — Minimal upload workflow (Issue 05)</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -58,7 +58,42 @@
               <option value="synthetic" selected>Synthetic (generated)</option>
               <option value="arabidopsis1001">Arabidopsis 1001 (subset)</option>
               <option value="wheat_t3">Wheat (T3 / CerealsDB)</option>
+              <option value="__upload__">Uploaded CSVs (your data)</option>
             </select>
+          </div>
+
+          <!-- v0.7.26 — Issue 05. Minimal upload workflow. Visible only when
+               the dataset selector is set to "Uploaded CSVs". The bundle is
+               sent in one multipart POST; the genotype is required, the rest
+               are surfaced in the summary but not yet consumed by the engine. -->
+          <div class="field" id="uploadField" hidden style="grid-column:1/-1;">
+            <div class="card" style="padding:14px; border:1px dashed var(--warn); background:rgba(255,180,90,0.04);">
+              <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:8px;">
+                <strong style="color:var(--warn)">EARLY IMPORT — not production integration</strong>
+                <small style="color:var(--muted)">Files are held in memory for ~1 hour, never persisted.</small>
+              </div>
+              <p style="margin:0 0 10px; font-size:13px; color:var(--muted)">
+                Provide a genotype CSV (required) in the same format as the built-in datasets:
+                <code>id,marker_1,marker_2,...,marker_N</code> with values <code>0</code>/<code>1</code>/<code>2</code>.
+                Optional tables (phenotype, pedigree, edits) are validated and shown in the import summary but not yet consumed by the simulator —
+                phenotypes come from the QTL model, pedigree is built by random mating, and edits use the existing <code>crispr_edits</code> count.
+                Fixture examples: <a href="/upload-fixture/genotype.csv">genotype</a> ·
+                <a href="/upload-fixture/phenotype.csv">phenotype</a> ·
+                <a href="/upload-fixture/pedigree.csv">pedigree</a> ·
+                <a href="/upload-fixture/edits.csv">edits</a>.
+              </p>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <label style="font-size:13px;">Genotype CSV <span style="color:var(--warn)">*</span><br><input id="uploadGenotype" type="file" accept=".csv,text/csv"></label>
+                <label style="font-size:13px;">Phenotype CSV<br><input id="uploadPhenotype" type="file" accept=".csv,text/csv"></label>
+                <label style="font-size:13px;">Pedigree CSV<br><input id="uploadPedigree" type="file" accept=".csv,text/csv"></label>
+                <label style="font-size:13px;">Edits CSV<br><input id="uploadEdits" type="file" accept=".csv,text/csv"></label>
+              </div>
+              <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
+                <button id="uploadBtn" class="btn" type="button">Upload &amp; validate</button>
+                <span id="uploadStatus" style="font-size:13px; color:var(--muted)">no upload yet</span>
+              </div>
+              <div id="uploadSummary" hidden style="margin-top:10px; font-size:13px;"></div>
+            </div>
           </div>
 
           <div class="field">
