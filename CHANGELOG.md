@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.31] - 2026-06-27
+
+### Added — Promptbio v0.1 Prompt Genome Mapper
+
+Ships the first Promptogenesis surface in BreedOS, per the founder-
+authored 2026-06-27 handoff `ingest-done/handoff-dna-prompt.md.done`.
+Closes `issues-promptbio/01-prompt-genome-mapper.md`.
+
+**Scope (handoff Section 12 Definition of Done):** static heuristic
+analyzer only. No live LLM, no API dependency, no RNG. Deterministic
+given input. Bilingual (RU + EN cue tokens). The biological BreedOS
+path is bit-identical.
+
+**New `mvp/promptbio/` subpackage** (separate Go package from main):
+
+- `types.go` — `LocusName` (14 constants from handoff Section 4.2:
+  Task, Role, Audience, Context, Constraint, Method, Epistemic,
+  Output schema, Validation, Tool, Memory, Safety/boundary, UX,
+  Evolution), `LocusStatus` (6 states: missing / weak / present /
+  strong / conflicting / not_applicable), `LocusAssessment`,
+  `ExpectedPhenotype`, `MutationSuggestion`, `GenomeMap`,
+  `MapRequest`.
+- `mapper.go` — `MapPrompt(req MapRequest) GenomeMap` static
+  analyzer. Each locus detected by small cue-token set; "strong"
+  status requires multiple cues (e.g. epistemic = facts AND
+  assumptions; output_schema = explicit named sections). The genome
+  score is the normalised average of applicable locus scores in
+  [0, 1] (`not_applicable` rows skipped).
+- `mapper_test.go` — 11 tests covering the handoff's two canonical
+  examples (raw GTM → low score; structured GTM → high with
+  role/epistemic/output_schema = strong), 14-loci cardinality,
+  mutation-plan coverage, deterministic prompt ids, language
+  detection, JSON round-trip stability.
+
+**HTTP surface:**
+
+- `POST /api/promptbio/map` (handoff Section 6.2). Request:
+  `{prompt, language?, species_hint?}`. Response: full `GenomeMap`
+  with prompt_id, genome_score, loci, missing_loci, conflicting_loci,
+  expected_phenotype, mutation_plan, tests_to_run.
+- `mvp/promptbio_handler.go` is the only import edge between the
+  main package and the subpackage.
+
+**UI:**
+
+- New public page `/promptbio` (`mvp/static/promptbio.html`):
+  textarea + Analyze button + Load-raw / Load-structured example
+  buttons + genome-score pill (low / mid / high colour band) +
+  14-loci table with status badges + mutation plan + tests to run.
+- Nav links from the demo and theory pages.
+
+**Theory page wording adjustments (handoff Sections 1.2, 1.3):**
+
+- `static/theory.html`: "behave identically" → "are structurally
+  analogous, or — more precisely for the BreedOS simulator —
+  operationally isomorphic" (the term the founder is comfortable
+  defending publicly).
+- New scope-boundary paragraph: "The full Promptogenesis framework
+  later extends into runtime organisms, PML maturity levels,
+  PromptOps governance, simulation environments, synthetic worlds,
+  AutoPromptOps, and safety for auto-evolving systems. The current
+  roadmap intentionally starts with the smallest measurable surface
+  — mapping, diffing, and evolving prompt-genotypes." Links to
+  `/promptbio`.
+- Module-roadmap row for v0.1 updated to "shipped v0.7.31".
+
+**Ingest lifecycle:**
+
+- 77 source files digested in one cycle:
+  `ingest/00..76-prompt-dna.md` + `handoff-dna-prompt.md` →
+  `ingest-done/<name>.md.done`. The handoff is the canonical
+  distillation; the 76 numbered files behind it are the
+  conversational substrate.
+- `issues-promptbio/00-README.md` updated to call out the handoff
+  as primary reading.
+- `issues-promptbio/01-prompt-genome-mapper.md` →
+  `issues-promptbio-done/01-prompt-genome-mapper.md.done` with
+  full completion section.
+- Issue 07 (substrate refactor) downgraded from P1 to P2; it is no
+  longer blocking the v0.1 module (the handoff demonstrates that
+  a static analyzer can ship without the substrate kernel).
+
+**Replaces the v0.7.25 scaffold:** `mvp/promptbio.go` (single-file
+type stub from the original promptbio scoping work) is deleted in
+the same commit. The handoff's 14-locus taxonomy supersedes the
+scaffold's taxonomy.
+
+### Tests — 11 new
+
+In `mvp/promptbio/mapper_test.go`:
+
+- `TestMapPrompt_RawGTM_LowScore` — handoff Section 5.2 prompt
+  scores under 0.30, ≥ 8 missing loci, non-empty mutation plan
+  + failure modes.
+- `TestMapPrompt_StructuredGTM_HigherScore` — handoff Section 5.3
+  prompt scores higher than raw; role/epistemic/output_schema =
+  strong; constraint/validation ≥ present.
+- `TestMapPrompt_EmptyPrompt_AllMissing` — score 0, all 14 missing,
+  confidence high.
+- `TestMapPrompt_DeterministicPromptID` — same input → same id +
+  score.
+- `TestMapPrompt_DetectsEnglishLanguage` — English sample → "en".
+- `TestMapPrompt_JSONSerialisationStable` — round-trip safe.
+- `TestMapPrompt_RoleDetection`, `TestMapPrompt_OutputSchemaDetectsStrong`,
+  `TestMapPrompt_MutationPlanCoversMissingLoci`,
+  `TestMapPrompt_TestsToRunAlwaysNonEmpty` — micro-coverage.
+
+Full Go suite (`go test ./...`) green: both `breedos-mvp` and
+`breedos-mvp/promptbio`.
+
+### Non-goals (per handoff Section 13, deferred)
+
+- Live LLM evaluation, full evolutionary search, AutoPromptOps,
+  hidden tests, knowledge graph, PML certification, complex
+  ontology, metabolism, agent runtime, real tool execution.
+- v0.2 Diff, v0.3 Evolution Loop, v0.4 Ecology, v0.5 Immunology —
+  queued as the next issues on the promptbio board.
+
 ## [0.7.30] - 2026-06-27
 
 ### Added — End-to-end breeder workflow (Issue 10)

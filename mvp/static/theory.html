@@ -30,6 +30,7 @@
       <a href="/demo">Demo</a>
       <a href="/datasets">Datasets</a>
       <a class="active" href="/theory">Theory</a>
+      <a href="/promptbio">Promptbio</a>
     </div>
   </nav>
 
@@ -43,11 +44,15 @@
       <p class="note">
         This direction is operational, not metaphorical: every term below maps to a measurable quantity, every module to a concrete simulator surface. Issues live on the <code>issues-promptbio/</code> board; source dialogue lives in <code>ingest-done/</code>.
       </p>
+      <!-- v0.7.31 — Scope-boundary paragraph per handoff Section 1.3. -->
+      <p class="note">
+        This page describes the Promptogenesis MVP surface for BreedOS. The full Promptogenesis framework later extends into runtime organisms, PML maturity levels, PromptOps governance, simulation environments, synthetic worlds, AutoPromptOps, and safety for auto-evolving systems. The current roadmap intentionally starts with the smallest measurable surface: mapping, diffing, and evolving prompt-genotypes. The first slice is live at <a href="/promptbio"><code>/promptbio</code></a> — paste a prompt, get a 14-loci genome map, missing-genes list, and mutation plan.
+      </p>
     </div>
 
     <div class="card" id="mapping">
       <h2 style="margin-top:0">The mapping</h2>
-      <p>The analogy is exact along one axis and breaks along another. Along the <strong>sequence-interpreted-by-environment</strong> axis, prompts and DNA behave identically: neither is a blueprint; both specify a space of possible developments; both have reaction norms across environments; both can mutate, recombine, drift, and be selected. Along the <strong>self-replication</strong> axis, the analogy breaks: prompts do not metabolise or reproduce themselves — they require an external evaluation-and-mutation loop. The BreedOS engine supplies that loop.</p>
+      <p>The analogy is exact along one axis and breaks along another. Along the <strong>sequence-interpreted-by-environment</strong> axis, prompts and DNA are <em>structurally analogous</em>, or — more precisely for the BreedOS simulator — <em>operationally isomorphic</em>: neither is a blueprint; both specify a space of possible developments; both have reaction norms across environments; both can mutate, recombine, drift, and be selected. Along the <strong>self-replication</strong> axis, the analogy breaks: prompts do not metabolise or reproduce themselves — they require an external evaluation-and-mutation loop. The BreedOS engine supplies that loop.</p>
 
       <table>
         <thead>
@@ -73,7 +78,7 @@
       <h2 style="margin-top:0">Module roadmap</h2>
       <p>Six modules build a five-layer system. v0.1–v0.3 form the smallest end-to-end usable surface. v0.4 and v0.5 add environmental and adversarial dimensions. v0.6 is sketched, deferred until earlier modules ship measurements.</p>
 
-      <div class="module-row"><span class="ver">v0.1</span><div><strong>Prompt Genome Mapper.</strong> Decompose a single prompt into 14 functional loci; surface missing genes, conflicts, expected phenotype, mutation plan.</div><span class="status">Issue 01 — Todo</span></div>
+      <div class="module-row"><span class="ver">v0.1</span><div><strong>Prompt Genome Mapper.</strong> Decompose a single prompt into 14 functional loci; surface missing genes, conflicts, expected phenotype, mutation plan. Live at <a href="/promptbio"><code>/promptbio</code></a>.</div><span class="status" style="color:var(--ok); font-weight:700;">shipped v0.7.31</span></div>
       <div class="module-row"><span class="ver">v0.2</span><div><strong>Prompt Genome Diff.</strong> Compare ancestor and descendant prompt; emit genomic diff, mutation ledger, fitness delta, regression analysis.</div><span class="status">Issue 02 — Todo</span></div>
       <div class="module-row"><span class="ver">v0.3</span><div><strong>Prompt Evolution Loop.</strong> Grow a population through mutation, evaluation, selection across niches; produce a prompt-family lineage tree.</div><span class="status">Issue 03 — Todo</span></div>
       <div class="module-row"><span class="ver">v0.4</span><div><strong>Prompt Ecology Analyzer.</strong> Map prompt fitness against 8 habitats (clean / sparse / noisy / conflicting / tool-rich / tool-poor / production / exploration); surface context-rot risk and deployment recommendations.</div><span class="status">Issue 04 — Todo</span></div>
@@ -167,7 +172,7 @@
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.30 — theory surface. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.31 — theory surface. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 </body>
 </html>

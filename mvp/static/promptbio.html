@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BreedOS Promptbio — v0.1 Prompt Genome Mapper</title>
+  <meta name="description" content="Static analyzer for prompts: decompose a raw prompt into 14 functional loci, surface missing genes, predict likely failure modes, and propose a mutation plan.">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .promptbio textarea { width: 100%; min-height: 160px; background: #081013; border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+    .promptbio .gscore-pill { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid; font-weight: 700; }
+    .promptbio .gscore-pill.low { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.08); }
+    .promptbio .gscore-pill.mid { color: var(--warn); border-color: var(--warn); background: rgba(255,211,140,0.08); }
+    .promptbio .gscore-pill.high { color: var(--ok); border-color: var(--ok); background: rgba(185,255,189,0.08); }
+    .promptbio table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .promptbio th, .promptbio td { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    .promptbio th { color: var(--accent2); }
+    .promptbio .status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid; }
+    .promptbio .status-badge.missing { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.08); }
+    .promptbio .status-badge.weak { color: var(--warn); border-color: var(--warn); background: rgba(255,211,140,0.08); }
+    .promptbio .status-badge.present { color: var(--accent2); border-color: var(--accent2); background: rgba(140,183,255,0.08); }
+    .promptbio .status-badge.strong { color: var(--ok); border-color: var(--ok); background: rgba(185,255,189,0.08); }
+    .promptbio .status-badge.conflicting { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.14); }
+    .promptbio .status-badge.not_applicable { color: var(--muted); border-color: var(--muted); background: rgba(155,177,173,0.06); }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a class="logo" href="/">Breed<span>OS</span></a>
+    <div class="navlinks">
+      <a href="/">Landing</a>
+      <a href="/demo">Demo</a>
+      <a href="/theory">Theory</a>
+      <a class="active" href="/promptbio">Promptbio</a>
+    </div>
+  </nav>
+
+  <main class="wrap section promptbio">
+    <div class="card" style="margin-bottom:18px">
+      <div class="kicker">Promptbio v0.1 — Prompt Genome Mapper</div>
+      <h1 style="font-size:clamp(34px,5vw,58px); margin-bottom:12px">Map a prompt's genome.</h1>
+      <p class="lede">
+        Paste a prompt. The mapper decomposes it into 14 functional loci, scores each, surfaces missing or weak genes, predicts likely failure modes, and proposes a mutation plan. Static heuristic — no live LLM, deterministic given the input.
+      </p>
+      <p class="note">
+        v0.1 scope per the handoff: static analyzer only. No live LLM evaluation, no evolutionary search, no governance loop. See <a href="/theory">/theory</a> for the framework and the scope-boundary paragraph.
+      </p>
+    </div>
+
+    <div class="card" style="margin-bottom:18px">
+      <h2 style="margin-top:0; font-size:22px;">Input</h2>
+      <textarea id="promptInput" placeholder="Paste your prompt here, in any language. Example: &quot;Напиши хорошую стратегию запуска продукта.&quot;"></textarea>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="analyzeBtn" class="btn primary" type="button">Analyze</button>
+        <button id="exampleRawBtn" class="btn" type="button">Load raw example</button>
+        <button id="exampleStructuredBtn" class="btn" type="button">Load structured example</button>
+        <span id="analyzeStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="resultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <div style="display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;">
+          <h2 style="margin:0; font-size:22px;">Genome score</h2>
+          <span id="genomeScorePill" class="gscore-pill mid">0.00</span>
+          <small id="promptIdLabel" style="color:var(--muted);"></small>
+        </div>
+        <p id="phenotypeHeadline" style="margin-top:10px; color:var(--text);"></p>
+        <div id="failureModes" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">14-loci map</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Locus</th><th>Status</th><th>Evidence</th><th>Risk if missing</th><th>Suggested mutation</th></tr></thead>
+            <tbody id="lociTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Mutation plan</h2>
+        <p class="note" style="margin-top:0;">Concrete edits the operator can apply. Re-analyze the mutated prompt and verify the score increases.</p>
+        <ol id="mutationPlan" style="margin:0 0 0 20px; padding:0; color:var(--text);"></ol>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Tests to run</h2>
+        <ol id="testsToRun" style="margin:0 0 0 20px; padding:0; color:var(--text);"></ol>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap">BreedOS MVP v0.7.31 — Promptbio v0.1 Prompt Genome Mapper. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+  </footer>
+
+  <script>
+    const RAW_EXAMPLE = 'Напиши хорошую стратегию запуска продукта.';
+    const STRUCTURED_EXAMPLE = 'Ты — senior GTM strategist. Сначала отдели facts, assumptions, unknowns. Учитывай бюджет, команду и ограничения. Дай план запуска в формате: summary, segment, channels, experiments, metrics, risks, next actions. Перед финалом проверь, что рекомендации не нарушают constraints.';
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function setStatus(text) {
+      const el = document.getElementById('analyzeStatus');
+      if (el) el.textContent = text || '';
+    }
+
+    function bandForScore(s) {
+      if (s < 0.30) return 'low';
+      if (s < 0.65) return 'mid';
+      return 'high';
+    }
+
+    function renderGenome(g) {
+      const card = document.getElementById('resultCard');
+      const pill = document.getElementById('genomeScorePill');
+      const pid = document.getElementById('promptIdLabel');
+      const head = document.getElementById('phenotypeHeadline');
+      const fmEl = document.getElementById('failureModes');
+      const tbody = document.getElementById('lociTable');
+      const planOl = document.getElementById('mutationPlan');
+      const testsOl = document.getElementById('testsToRun');
+
+      pill.textContent = g.genome_score.toFixed(3);
+      pill.className = 'gscore-pill ' + bandForScore(g.genome_score);
+      pid.textContent = g.prompt_id + ' · language=' + (g.language || 'unknown');
+
+      head.textContent = (g.expected_phenotype && g.expected_phenotype.likely_output) || '';
+      const fms = (g.expected_phenotype && g.expected_phenotype.failure_modes) || [];
+      fmEl.innerHTML = fms.length
+        ? '<strong>Likely failure modes:</strong> ' + fms.map(f => '<code>' + escapeHtml(f) + '</code>').join(', ') + ' <small style="color:var(--muted);">(confidence: ' + escapeHtml(g.expected_phenotype.confidence || '') + ')</small>'
+        : '<em style="color:var(--muted);">No obvious failure modes flagged.</em>';
+
+      tbody.innerHTML = (g.loci || []).map(l => `
+        <tr>
+          <td><code>${escapeHtml(l.name)}</code></td>
+          <td><span class="status-badge ${escapeHtml(l.status)}">${escapeHtml(l.status)}</span></td>
+          <td>${l.evidence ? '<code>' + escapeHtml(l.evidence) + '</code>' : '<em style="color:var(--muted);">—</em>'}</td>
+          <td>${escapeHtml(l.risk_if_missing || '')}</td>
+          <td>${escapeHtml(l.suggested_mutation || '')}</td>
+        </tr>
+      `).join('');
+
+      planOl.innerHTML = (g.mutation_plan || []).map(m => `
+        <li style="margin-bottom:8px;">
+          <strong>${escapeHtml(m.mutation_type)}</strong> → <code>${escapeHtml(m.target_locus)}</code><br>
+          <span>${escapeHtml(m.patch)}</span><br>
+          <small style="color:var(--muted);">${escapeHtml(m.rationale)}</small>
+        </li>
+      `).join('') || '<li><em style="color:var(--muted);">No mutations suggested.</em></li>';
+
+      testsOl.innerHTML = (g.tests_to_run || []).map(t => '<li style="margin-bottom:6px;">' + escapeHtml(t) + '</li>').join('') || '<li><em style="color:var(--muted);">No tests suggested.</em></li>';
+      card.hidden = false;
+    }
+
+    async function analyze() {
+      const text = document.getElementById('promptInput').value || '';
+      setStatus('analyzing...');
+      try {
+        const res = await fetch('/api/promptbio/map', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({prompt: text, language: 'auto'})
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || ('HTTP ' + res.status));
+        }
+        const g = await res.json();
+        renderGenome(g);
+        setStatus('done — score ' + g.genome_score.toFixed(3));
+      } catch (e) {
+        setStatus('error: ' + e.message);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('analyzeBtn').addEventListener('click', analyze);
+      document.getElementById('exampleRawBtn').addEventListener('click', () => {
+        document.getElementById('promptInput').value = RAW_EXAMPLE;
+      });
+      document.getElementById('exampleStructuredBtn').addEventListener('click', () => {
+        document.getElementById('promptInput').value = STRUCTURED_EXAMPLE;
+      });
+    });
+  </script>
+</body>
+</html>

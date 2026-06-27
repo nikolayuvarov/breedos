@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.30 — End-to-end breeder workflow (Issue 10)</div>
+      <div class="kicker">MVP v0.7.31 — Promptbio v0.1 Prompt Genome Mapper</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -31,7 +31,7 @@
       <p class="note">
         Small populations are intentionally allowed. Try N=8 or N=12 to see rapid drift and fixation. Runs are manual: if parameters are unchanged, recalculation is skipped. The Run simulation button shows worker-pool progress. Solid lines are the current run; dotted lines show the previous run.
       </p>
-      <!-- v0.7.30 — Issue 10. End-to-end workflow stepper. Eight steps
+      <!-- v0.7.31 — Issue 10. End-to-end workflow stepper. Eight steps
            from data → decision; clicking a step scrolls / focuses the
            corresponding region. Compact horizontal layout. -->
       <ol class="workflow-stepper" aria-label="End-to-end breeder workflow">
@@ -402,7 +402,7 @@
       </aside>
 
       <section class="results">
-        <!-- v0.7.30 — Issue 10. Empty-state placeholder shown before
+        <!-- v0.7.31 — Issue 10. Empty-state placeholder shown before
              the first run. Hidden by app.js as soon as currentData is
              set. Tells the operator the workflow shape without
              scrolling through empty charts. -->
@@ -436,7 +436,7 @@
               <option value="generations">Generations horizon</option>
             </select></label>
             <label class="sens-label sens-values-label" id="sensValuesLabel">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
-            <!-- v0.7.30 — Issue 29. Structured climate-scenario picker.
+            <!-- v0.7.31 — Issue 29. Structured climate-scenario picker.
                  Shown when axis = climate_scenario. Each row is a
                  {mode, severity} pair; empty mode means "skip this row".
                  Up to 5 used by the backend (sensitivityMaxValues). -->
@@ -458,7 +458,7 @@
           <div id="sensBudget" class="budget-meter"></div>
           <div id="sensStatus" class="status"></div>
           <div id="sensVerdict" class="sens-verdict" hidden></div>
-          <!-- v0.7.30 — Issue 31. Climate-robustness Decision Report
+          <!-- v0.7.31 — Issue 31. Climate-robustness Decision Report
                section. Rendered only when the sweep used the
                climate_scenario axis and produced ≥ 2 scenarios. -->
           <div id="sensClimateRobustness" class="sens-verdict" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
@@ -551,7 +551,7 @@
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
           <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
-          <!-- v0.7.30 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
+          <!-- v0.7.31 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
                Rendered from decision.edit_decisions; populated whenever the
                run ranked any candidate edits. -->
           <div id="editDecisionsCard" class="ngt-regulatory-card" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
@@ -593,7 +593,7 @@
             </table>
           </div>
         </div>
-        <!-- v0.7.30 — Issue 10. Step 7 (Export) and Step 8 (Next)
+        <!-- v0.7.31 — Issue 10. Step 7 (Export) and Step 8 (Next)
              card. Anchored from the workflow stepper at the top; gives
              the operator a clear "what now" after reading the report. -->
         <div class="card" id="step-export" style="border-color:var(--accent2);">
