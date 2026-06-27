@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.27] - 2026-06-27
+
+### Added — Edit-vs-Cross-vs-Wait classifier (Issue 07)
+
+Closes `issues-breedos/07-edit-vs-cross-vs-wait.md` (P1). For each
+ranked candidate edit, the CRISPR layer now answers the operator
+question: should we **edit**, **cross/select**, or **wait/validate**?
+
+**Classifier rules** (priority-ordered, in `mvp/edit_classifier.go`):
+
+1. **WAIT — NEAR_FIXATION.** `p ≥ 0.92` — selection or drift completes
+   the lift; edit adds no realistic gain.
+2. **WAIT — MARGINAL_EFFECT.** `|effect| < 0.10` — below the practical-
+   gain threshold; validation cost likely exceeds expected benefit.
+3. **WAIT — BOTTLENECK_RISK.** `baseDiversity < 0.15` AND `p < 0.10` —
+   editing into a narrow founder set compounds the bottleneck.
+4. **EDIT — LARGE_EFFECT_RARE_ALLELE.** `|effect| ≥ 0.30` AND
+   `p < 0.20` — selection is too slow; editing produces immediate
+   progress. When `effect > 1.4` AND `p < 0.10`, the posture tightens
+   to ≤2% introgression with a pleiotropy / background-validation
+   warning.
+5. **CROSS — ALREADY_SEGREGATING.** `0.20 ≤ p < 0.92` AND
+   `|effect| ≥ 0.10` — selection/crossing propagates it without an
+   edit.
+6. **EDIT — MID_BAND_RARE_FAVOUR_EDIT.** `p < 0.20` AND
+   `|effect| ≥ 0.10` (not large) — gray-band edit case; ~5% posture.
+7. **Default — CROSS.**
+
+**Backend wiring:**
+
+- New `EditDecision` struct (`class`, `reason_code`, `reason`,
+  `introgression_posture`, `risk_warning`).
+- New `Classification *EditDecision` field on `EditCandidate`. The
+  legacy `decision` text field is kept and aligned with the new class
+  for backward compatibility.
+- New `EditDecisionSummary` aggregate
+  (`{total_candidates, edit_count, cross_count, wait_count, headline}`)
+  on `DecisionSummary` as `edit_decisions`.
+- `rankEditCandidates` now takes `baseDiversity` and attaches a
+  classification to every ranked candidate. Both single-trait and
+  multi-trait paths wired identically.
+- New honesty-layer note added to `notes` whenever the run plans
+  edits, pointing operators at `decision.edit_decisions`.
+
+**Demo UI:**
+
+- New "Edit / Cross / Wait" column in the candidate-edit table,
+  rendering a colour-coded pill badge (EDIT = accent green, CROSS =
+  blue, WAIT = amber). Hovering any badge shows the per-candidate
+  reason, introgression posture, and risk warning.
+- New `editDecisionsCard` above the table renders the run-level
+  headline + per-class counts + the classifier-rule legend.
+
+### Tests — 10 new
+
+`edit_classifier_test.go` covers the canonical cases the issue calls
+for and the rule-summary integrity:
+
+- `TestClassify_LargeEffectRareAllele_Edit` — canonical EDIT case.
+- `TestClassify_VeryHighEffectVeryRare_EditCautious` — cautious ≤2%
+  posture + pleiotropy warning for effect > 1.4 with very rare allele.
+- `TestClassify_HighFrequencyMarginal_Wait_NearFixation`.
+- `TestClassify_LowEffect_Wait_MarginalEffect`.
+- `TestClassify_HighRisk_Wait_BottleneckRisk`.
+- `TestClassify_Segregating_Cross`.
+- `TestClassify_MidBandRareModerate_Edit`.
+- `TestSummarize_AllEdit`, `TestSummarize_MixedHeadline`,
+  `TestSummarize_Empty`.
+- `TestRankEditCandidates_AttachesClassification` — every ranked
+  candidate has a Classification; legacy `decision` text stays
+  aligned with the new class.
+
+Full suite green.
+
+### Issue closed
+
+- `issues-breedos/07-edit-vs-cross-vs-wait.md` →
+  `issues-breedos-done/07-edit-vs-cross-vs-wait.md.done`.
+
+### Non-goals (per the issue, deferred)
+
+- Guide-RNA design.
+- Off-target scoring.
+- Lab-protocol generation.
+- Edit-cost / validation-confidence / pleiotropy-from-external-tools
+  rules — the rule body is structured so these slot in without
+  refactor when the data path exists.
+
 ## [0.7.26] - 2026-06-27
 
 ### Added — Minimal upload workflow (Issue 05)

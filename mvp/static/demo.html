@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.26 — Minimal upload workflow (Issue 05)</div>
+      <div class="kicker">MVP v0.7.27 — Edit / Cross / Wait classifier (Issue 07)</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -496,11 +496,15 @@
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
           <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
+          <!-- v0.7.27 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
+               Rendered from decision.edit_decisions; populated whenever the
+               run ranked any candidate edits. -->
+          <div id="editDecisionsCard" class="ngt-regulatory-card" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Rank</th><th>Locus</th><th>Effect</th><th>Allele freq.</th><th>Gain score</th><th>Risk</th><th>Decision</th><th>NGT</th>
+                  <th>Rank</th><th>Locus</th><th>Effect</th><th>Allele freq.</th><th>Gain score</th><th>Risk</th><th>Edit / Cross / Wait</th><th>Decision</th><th>NGT</th>
                 </tr>
               </thead>
               <tbody id="editTable"></tbody>

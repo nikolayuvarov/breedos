@@ -454,7 +454,7 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		baseMeans[t] = meanGeneticValue(initial, effects[t])
 	}
 	rareUsefulAtStart := rareUsefulLoci(baseFreq, effects[0])
-	candidates := rankEditCandidates(baseFreq, effects[0], req.CrisprEdits)
+	candidates := rankEditCandidates(baseFreq, effects[0], req.CrisprEdits, baseDiversity)
 
 	reportProgress(progress, 5, fmt.Sprintf("multi-trait population + effects ready (T=%d traits)", T))
 
@@ -503,6 +503,9 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 		c := ClassifyEditSet(candidates, req.NGT)
 		decision.NGT = &c
 	}
+	// v0.7.27 — Issue 07. Aggregate edit-vs-cross-vs-wait counts in
+	// the multi-trait path too.
+	decision.EditDecisions = summarizeEditDecisions(candidates)
 	// Headline per-trait gain map for the recommended (best risk-adjusted)
 	// strategy. Indexed by trait name so a downstream UI doesn't need to
 	// rely on ordering.

@@ -66,7 +66,7 @@ function numberValue(id) {
   return Number.isFinite(v) ? v : 0;
 }
 
-// v0.7.26 — Issue 05. Holds the in-memory upload id returned by /api/upload.
+// v0.7.27 — Issue 05. Holds the in-memory upload id returned by /api/upload.
 // Cleared when the user picks a non-upload dataset.
 let uploadState = {id: null, summary: null};
 
@@ -562,6 +562,9 @@ function renderAll(data, prev) {
   // v0.7.18 — pass set-level NGT classification to both renderers.
   const ngt = (data.decision && data.decision.ngt) || null;
   renderNGTRegulatoryCard(ngt, data.request);
+  // v0.7.27 — Issue 07. Render the edit-vs-cross-vs-wait headline card
+  // above the candidate-edit table from decision.edit_decisions.
+  renderEditDecisionsCard((data.decision && data.decision.edit_decisions) || null);
   renderEditTable(data.candidate_edits || [], ngt);
   renderStrategyTable(data.strategies || [], prev);
 }
@@ -668,7 +671,7 @@ function renderSummary(data, prev) {
 
 function renderEditTable(edits, ngt) {
   if (!edits.length) {
-    byId('editTable').innerHTML = '<tr><td colspan="8">No candidate edits returned.</td></tr>';
+    byId('editTable').innerHTML = '<tr><td colspan="9">No candidate edits returned.</td></tr>';
     return;
   }
   // v0.7.18 — Issue 14. The NGT classification is set-level (one verdict
@@ -683,10 +686,57 @@ function renderEditTable(edits, ngt) {
       <td>${fmt(e.allele_frequency)}</td>
       <td>${fmt(e.expected_gain_score)}</td>
       <td>${escapeHtml(e.diversity_risk)}</td>
+      <td>${editClassBadgeHtml(e.classification)}</td>
       <td>${escapeHtml(e.decision)}</td>
       <td>${badge}</td>
     </tr>
   `).join('');
+}
+
+// v0.7.27 — Issue 07. Renders the headline card above the candidate-
+// edit table. Hidden when no edits were ranked.
+function renderEditDecisionsCard(summary) {
+  const el = byId('editDecisionsCard');
+  if (!el) return;
+  if (!summary || !summary.total_candidates) {
+    el.hidden = true;
+    return;
+  }
+  const headline = summary.headline || '';
+  el.innerHTML = `
+    <h3 style="color:var(--accent2);">Edit / Cross / Wait — decision mix</h3>
+    <p style="margin:0 0 8px;">${escapeHtml(headline)}</p>
+    <div style="display:flex; gap:14px; flex-wrap:wrap; font-size:13px;">
+      <span><span class="edit-class-badge edit">EDIT</span> ${summary.edit_count}</span>
+      <span><span class="edit-class-badge cross">CROSS</span> ${summary.cross_count}</span>
+      <span><span class="edit-class-badge wait">WAIT</span> ${summary.wait_count}</span>
+      <span style="color:var(--muted);">of ${summary.total_candidates} ranked candidate(s)</span>
+    </div>
+    <p class="ngt-disclaimer" style="margin-top:10px;">Classification rules: <strong>EDIT</strong> — large effect (≥ 0.30) on a rare allele (p &lt; 0.20), or any meaningful effect (≥ 0.10) on a rare allele where selection is too slow. <strong>CROSS</strong> — favourable allele already segregating (p ≥ 0.20). <strong>WAIT</strong> — effect below the marginal-gain threshold (0.10), or allele near fixation (p ≥ 0.92), or bottleneck risk (founder diversity &lt; 0.15 with rare allele). Hover any row's badge for the per-candidate reason.</p>
+  `;
+  el.hidden = false;
+}
+
+// v0.7.27 — Issue 07. Colour-coded edit-vs-cross-vs-wait badge with
+// the full reason / posture / risk tooltip. Pairs with the CSS classes
+// .edit-class-badge.{edit,cross,wait,unknown}.
+function editClassBadgeHtml(c) {
+  if (!c || !c.class) return '<span class="edit-class-badge unknown" title="No classification.">—</span>';
+  const cls = c.class === 'edit' ? 'edit'
+            : c.class === 'cross' ? 'cross'
+            : c.class === 'wait' ? 'wait'
+            : 'unknown';
+  const label = c.class === 'edit' ? 'EDIT'
+              : c.class === 'cross' ? 'CROSS'
+              : c.class === 'wait' ? 'WAIT'
+              : '—';
+  const tipParts = [];
+  if (c.reason) tipParts.push(c.reason);
+  if (c.introgression_posture) tipParts.push('Posture: ' + c.introgression_posture);
+  if (c.risk_warning) tipParts.push('Risk: ' + c.risk_warning);
+  if (c.reason_code) tipParts.push('Code: ' + c.reason_code);
+  const tip = tipParts.join('\n\n');
+  return `<span class="edit-class-badge ${cls}" tabindex="0" title="${escapeHtml(tip)}">${label}</span>`;
 }
 
 // v0.7.18 — Issue 14. Renders a colour-coded NGT badge from an
@@ -1769,7 +1819,7 @@ window.addEventListener('DOMContentLoaded', () => {
     sensRunBtn.addEventListener('click', runSensitivitySweep);
     updateSensBudgetMeter();
   }
-  // v0.7.26 — Issue 05. Upload UI: show/hide the upload card, handle the
+  // v0.7.27 — Issue 05. Upload UI: show/hide the upload card, handle the
   // multipart POST, render the import summary.
   setupUploadUI();
   setStatus('Ready. Press Run simulation to calculate.', '');

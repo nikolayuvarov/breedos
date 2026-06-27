@@ -131,6 +131,11 @@ type DecisionSummary struct {
 	// CrisprEdits > 0). Carries the verdict + reasons + disqualifiers +
 	// "Not legal advice" disclaimer.
 	NGT *NGTClassification `json:"ngt,omitempty"`
+	// v0.7.27 — Issue 07. Edit-vs-cross-vs-wait aggregate across all
+	// candidate edits in this run. Headline + per-class counts. Always
+	// present when candidates were ranked (otherwise headline explains
+	// why the table is empty).
+	EditDecisions EditDecisionSummary `json:"edit_decisions"`
 	// v0.7.21 — Issue 18. Headline per-trait gain for the recommended
 	// (best risk-adjusted) strategy, keyed by trait name. Populated only on
 	// multi-trait runs.
@@ -221,6 +226,11 @@ type EditCandidate struct {
 	ExpectedGainScore float64 `json:"expected_gain_score"`
 	DiversityRisk     string  `json:"diversity_risk"`
 	Decision          string  `json:"decision"`
+	// v0.7.27 — Issue 07. Structured edit-vs-cross-vs-wait
+	// classification. Backward-compat: the legacy `decision` string
+	// above is still emitted; clients that only know about that field
+	// keep working. Nil-friendly for paths that bypass the classifier.
+	Classification *EditDecision `json:"classification,omitempty"`
 }
 
 type organism struct{ geno []uint8 }
@@ -635,7 +645,7 @@ func runSimulationWithCallbacks(req SimRequest, progress progressFunc, snapshot 
 	baseDiversity := diversityFromFreq(baseFreq)
 	baseMean := meanGeneticValue(initial, effects)
 	rareUsefulAtStart := rareUsefulLoci(baseFreq, effects)
-	candidates := rankEditCandidates(baseFreq, effects, req.CrisprEdits)
+	candidates := rankEditCandidates(baseFreq, effects, req.CrisprEdits, baseDiversity)
 	reportProgress(progress, 5, "initial population, candidate edits, and strategy set ready")
 	results := simulateStrategiesDecisionEngine(req, strategies, initial, effects, baseFreq, baseDiversity, baseMean, rareUsefulAtStart, candidates, progress, snapshot)
 	annotateDecisionScores(results)
@@ -648,6 +658,9 @@ func runSimulationWithCallbacks(req SimRequest, progress progressFunc, snapshot 
 		c := ClassifyEditSet(candidates, req.NGT)
 		decision.NGT = &c
 	}
+	// v0.7.27 — Issue 07. Aggregate edit-vs-cross-vs-wait counts over
+	// the per-candidate classifications produced by rankEditCandidates.
+	decision.EditDecisions = summarizeEditDecisions(candidates)
 	reportProgress(progress, 98, "building response")
 	return SimResponse{Request: req, Decision: decision, Strategies: results, CandidateEdits: candidates, Notes: buildNotes(req, len(strategies), baseDiversity, datasetMeta)}, nil
 }
@@ -671,7 +684,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.26 ships the minimal upload workflow (Issue 05): new POST /api/upload accepts a multipart bundle of up to four CSVs (genotype required; phenotype / pedigree / edits optional). The genotype CSV — same format as the existing dataset loader (id, marker_1..N with values 0/1/2) — is consumed as the founder population. Optional tables are parsed and surfaced in the import summary but not yet wired into the engine (phenotypes come from the QTL model; pedigree is built by random mating; edits use the existing crispr_edits counter). Uploads are ephemeral: in-memory cache, 1-hour TTL, never persisted. A new SimRequest field `upload` references the upload by id; if both `upload` and `dataset` are set, upload wins. v0.7.25 opens a second direction alongside biological breeding: prompt-organism simulation. A new public `/theory` page documents the promptogenesis framework (prompts as genotypes, LLM+context as developmental environment, responses as phenotypes), with mapping table, glossary (~50 terms), and module roadmap. A new `issues-promptbio/` execution board scopes the six-module sequence (v0.1 Genome Mapper → v0.2 Genome Diff → v0.3 Evolution Loop → v0.4 Ecology Analyzer → v0.5 Immunology → v0.6 Metabolism, deferred) plus the engine-extension foundation (Issue 07, P1). A new `ingest-done/` audit trail folder mirrors the issues-*-done/ convention: raw theory threads land in `ingest/`, get distilled into a topic-named board, and the source files move to `ingest-done/<NN>-<theme>.md.done`. A new `breedos/mvp/promptbio.go` ships the substrate type surface (PromptGenotype, 14-locus taxonomy, mutation kinds, PromptbioSimRequest) with NO runtime behaviour — biological simulation path is bit-identical to v0.7.24. v0.7.24 wired the Climate stress catalog (shipped v0.7.23 as Issue 27 foundation) into the simulator. New `climate` field on `/api/simulate` carries the chosen ClimateScenario; the engine applies a per-stage phenotype penalty calibrated to Khan et al. 2024 (heat_burst_anthesis 0.32, heat_grain_filling 0.46, combined_postflowering 0.59; others scaled to published yield-loss ranges). Penalty is rank-preserving (uniform across the population), so candidate ordering and selection are unchanged — only the recorded gain drops. `Climate = nil` is bit-identical to v0.7.23 behaviour. v0.7.23 shipped five small improvements as one bundle: (A) Climate Issue 27 foundation — 8-mode catalog + types + LookupClimateMode + validation, no simulation impact yet; (B) sensitivity sweep gains a dynamic axis `trait_weight:<name>` that sweeps per-trait selection weights for multi-trait runs (closes Methane pack workflow gap); (C) `/api/version` returns `{version, commit, build_time}` for deploy verification without HTML grep; (D) Reset button next to presets restores the Balanced default and clears multi-trait state; (E) `/datasets` page gains a 'Generated datasets' section listing the `holstein_synthetic` in-memory generator with honesty-layer disclosure and pointers to the real 1000 Bull Genomes data. v0.7.22 shipped the Methane-pack (Issues 22–26) plus Holstein Issue 19 (synthetic dataset). Methane-pack: methane defaults (h² 0.18–0.21, audited correlations −0.26 / −0.43 / +0.35), N-D Pareto with axis-picker, selection-index weight composer (sliders per trait), 'Methane MeI' (favourable) and 'Methane MeP' (unfavourable) preset buttons, plus a multi-trait trade-off paragraph in the Decision Report. Holstein Issue 19 adds a synthetic Holstein-flavoured founder dataset (Beta(0.5, 0.5) MAF) reachable as `dataset = holstein_synthetic`. Issue 21 graphical Pareto overlay deferred — gain units (standardised) cannot be honestly compared to inbreeding cost (kg of milk) on the same axis; the text-only inbreeding-cost note (shipped v0.7.20) remains the authoritative reporting path. v0.7.21 shipped the multi-trait engine (Issue 18, shared infra for Holstein and Methane packs). When req.Traits is set, the new branch runs a parallel simulator that draws correlated per-trait marker effects via Cholesky decomposition of the genetic-correlation matrix, computes per-trait phenotypes, and selects by a weighted standardised index. Backward compatibility: req.Traits unset → existing single-trait path unchanged. v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.27 ships the edit-vs-cross-vs-wait classifier (Issue 07). Every ranked candidate edit now carries a structured `classification` field with `class` (edit / cross / wait), a machine-readable `reason_code`, a human-readable `reason`, an `introgression_posture`, and a `risk_warning`. Rules use only quantities already in scope (QTL effect, current allele frequency, baseline population diversity); thresholds are centralised in `edit_classifier.go`. EDIT is recommended for large-effect rare alleles (and uses a cautious ≤2% posture when effect > 1.4 and allele is very rare); CROSS is recommended when the favourable allele is already segregating; WAIT covers near-fixation, marginal effect, and bottleneck-risk cases. `decision.edit_decisions` now carries an aggregate {edit_count, cross_count, wait_count, headline} so the demo can render a per-run mix. The legacy `decision` string on each candidate is kept aligned with the new class for backward compatibility. v0.7.26 shipped the minimal upload workflow (Issue 05): new POST /api/upload accepts a multipart bundle of up to four CSVs (genotype required; phenotype / pedigree / edits optional). The genotype CSV — same format as the existing dataset loader (id, marker_1..N with values 0/1/2) — is consumed as the founder population. Optional tables are parsed and surfaced in the import summary but not yet wired into the engine (phenotypes come from the QTL model; pedigree is built by random mating; edits use the existing crispr_edits counter). Uploads are ephemeral: in-memory cache, 1-hour TTL, never persisted. A new SimRequest field `upload` references the upload by id; if both `upload` and `dataset` are set, upload wins. v0.7.25 opens a second direction alongside biological breeding: prompt-organism simulation. A new public `/theory` page documents the promptogenesis framework (prompts as genotypes, LLM+context as developmental environment, responses as phenotypes), with mapping table, glossary (~50 terms), and module roadmap. A new `issues-promptbio/` execution board scopes the six-module sequence (v0.1 Genome Mapper → v0.2 Genome Diff → v0.3 Evolution Loop → v0.4 Ecology Analyzer → v0.5 Immunology → v0.6 Metabolism, deferred) plus the engine-extension foundation (Issue 07, P1). A new `ingest-done/` audit trail folder mirrors the issues-*-done/ convention: raw theory threads land in `ingest/`, get distilled into a topic-named board, and the source files move to `ingest-done/<NN>-<theme>.md.done`. A new `breedos/mvp/promptbio.go` ships the substrate type surface (PromptGenotype, 14-locus taxonomy, mutation kinds, PromptbioSimRequest) with NO runtime behaviour — biological simulation path is bit-identical to v0.7.24. v0.7.24 wired the Climate stress catalog (shipped v0.7.23 as Issue 27 foundation) into the simulator. New `climate` field on `/api/simulate` carries the chosen ClimateScenario; the engine applies a per-stage phenotype penalty calibrated to Khan et al. 2024 (heat_burst_anthesis 0.32, heat_grain_filling 0.46, combined_postflowering 0.59; others scaled to published yield-loss ranges). Penalty is rank-preserving (uniform across the population), so candidate ordering and selection are unchanged — only the recorded gain drops. `Climate = nil` is bit-identical to v0.7.23 behaviour. v0.7.23 shipped five small improvements as one bundle: (A) Climate Issue 27 foundation — 8-mode catalog + types + LookupClimateMode + validation, no simulation impact yet; (B) sensitivity sweep gains a dynamic axis `trait_weight:<name>` that sweeps per-trait selection weights for multi-trait runs (closes Methane pack workflow gap); (C) `/api/version` returns `{version, commit, build_time}` for deploy verification without HTML grep; (D) Reset button next to presets restores the Balanced default and clears multi-trait state; (E) `/datasets` page gains a 'Generated datasets' section listing the `holstein_synthetic` in-memory generator with honesty-layer disclosure and pointers to the real 1000 Bull Genomes data. v0.7.22 shipped the Methane-pack (Issues 22–26) plus Holstein Issue 19 (synthetic dataset). Methane-pack: methane defaults (h² 0.18–0.21, audited correlations −0.26 / −0.43 / +0.35), N-D Pareto with axis-picker, selection-index weight composer (sliders per trait), 'Methane MeI' (favourable) and 'Methane MeP' (unfavourable) preset buttons, plus a multi-trait trade-off paragraph in the Decision Report. Holstein Issue 19 adds a synthetic Holstein-flavoured founder dataset (Beta(0.5, 0.5) MAF) reachable as `dataset = holstein_synthetic`. Issue 21 graphical Pareto overlay deferred — gain units (standardised) cannot be honestly compared to inbreeding cost (kg of milk) on the same axis; the text-only inbreeding-cost note (shipped v0.7.20) remains the authoritative reporting path. v0.7.21 shipped the multi-trait engine (Issue 18, shared infra for Holstein and Methane packs). When req.Traits is set, the new branch runs a parallel simulator that draws correlated per-trait marker effects via Cholesky decomposition of the genetic-correlation matrix, computes per-trait phenotypes, and selects by a weighted standardised index. Backward compatibility: req.Traits unset → existing single-trait path unchanged. v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -693,6 +706,12 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 		notes = append(notes, "Advanced strategy set enabled: includes neutral/random baselines, phenotype/genomic selection mockups, OCS-like diversity constraint, cross planning, and edit-aware introgression.")
 	} else {
 		notes = append(notes, "Core strategy set enabled: includes a neutral drift baseline plus aggressive, diversity-preserving, balanced, and CRISPR-aware balanced strategies when CRISPR is enabled.")
+	}
+	// v0.7.27 — Issue 07. Edit-vs-cross-vs-wait headline. Only added
+	// when the operator actually planned edits — otherwise the
+	// summary headline is "no candidates ranked" which is noisy.
+	if req.CrisprEnabled && req.CrisprEdits > 0 {
+		notes = append(notes, "Edit-vs-cross-vs-wait classifier (Issue 07): each candidate edit is classified by effect size, current allele frequency, and population diversity. EDIT = large-effect rare alleles where selection is too slow; CROSS = allele already segregating; WAIT = marginal effect, near fixation, or bottleneck risk. See `decision.edit_decisions` for the run's mix.")
 	}
 	if req.PopulationSize < 50 {
 		notes = append(notes, "Small-population mode is enabled: N < 50 is intentionally allowed to expose stochastic drift, rapid fixation, and founder effects.")
@@ -2096,7 +2115,10 @@ func countRareUsefulLost(freq []float64, loci []int) int {
 	}
 	return lost
 }
-func rankEditCandidates(freq []float64, effects []float64, maxEdits int) []EditCandidate {
+// v0.7.27 — Issue 07. baseDiversity is consumed by the classifier so
+// the "wait — bottleneck risk" rule has access to it. Callers all have
+// baseDiversity in scope.
+func rankEditCandidates(freq []float64, effects []float64, maxEdits int, baseDiversity float64) []EditCandidate {
 	if maxEdits <= 0 {
 		return nil
 	}
@@ -2133,7 +2155,19 @@ func rankEditCandidates(freq []float64, effects []float64, maxEdits int) []EditC
 		if p > 0.70 {
 			decision = "prefer selection/crossing; edit adds limited marginal value"
 		}
-		out = append(out, EditCandidate{Rank: rank + 1, Locus: it.locus, Effect: round4(effects[it.locus]), AlleleFrequency: round4(p), ExpectedGainScore: round4(it.score), DiversityRisk: risk, Decision: decision})
+		// v0.7.27 — Issue 07. Structured class derived from the rule
+		// engine. The legacy `decision` string above is kept aligned
+		// so clients that only render it still get a sane summary.
+		cls := classifyEditCandidate(effects[it.locus], p, baseDiversity)
+		switch cls.Class {
+		case "edit":
+			decision = "seed edit into limited founders, then test under balanced selection"
+		case "cross":
+			decision = "prefer selection/crossing; edit adds limited marginal value"
+		case "wait":
+			decision = "defer edit — validate effect, restore diversity, or let selection complete the lift"
+		}
+		out = append(out, EditCandidate{Rank: rank + 1, Locus: it.locus, Effect: round4(effects[it.locus]), AlleleFrequency: round4(p), ExpectedGainScore: round4(it.score), DiversityRisk: risk, Decision: decision, Classification: &cls})
 	}
 	return out
 }
