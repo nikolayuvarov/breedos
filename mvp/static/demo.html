@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.28 — Climate pack complete (Issues 29, 30, 31)</div>
+      <div class="kicker">MVP v0.7.29 — Imported GEBV selection (Issue 08)</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -80,13 +80,15 @@
                 Fixture examples: <a href="/upload-fixture/genotype.csv">genotype</a> ·
                 <a href="/upload-fixture/phenotype.csv">phenotype</a> ·
                 <a href="/upload-fixture/pedigree.csv">pedigree</a> ·
-                <a href="/upload-fixture/edits.csv">edits</a>.
+                <a href="/upload-fixture/edits.csv">edits</a> ·
+                <a href="/upload-fixture/predictions.csv">predictions</a>.
               </p>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                 <label style="font-size:13px;">Genotype CSV <span style="color:var(--warn)">*</span><br><input id="uploadGenotype" type="file" accept=".csv,text/csv"></label>
                 <label style="font-size:13px;">Phenotype CSV<br><input id="uploadPhenotype" type="file" accept=".csv,text/csv"></label>
                 <label style="font-size:13px;">Pedigree CSV<br><input id="uploadPedigree" type="file" accept=".csv,text/csv"></label>
                 <label style="font-size:13px;">Edits CSV<br><input id="uploadEdits" type="file" accept=".csv,text/csv"></label>
+                <label style="font-size:13px; grid-column:1/-1;">Predictions CSV <small style="color:var(--muted)">— id, gebv[, uncertainty]; enables the imported_gebv strategy in the advanced set</small><br><input id="uploadPredictions" type="file" accept=".csv,text/csv"></label>
               </div>
               <div style="display:flex; gap:10px; align-items:center; margin-top:10px;">
                 <button id="uploadBtn" class="btn" type="button">Upload &amp; validate</button>
@@ -402,7 +404,7 @@
               <option value="generations">Generations horizon</option>
             </select></label>
             <label class="sens-label sens-values-label" id="sensValuesLabel">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
-            <!-- v0.7.28 — Issue 29. Structured climate-scenario picker.
+            <!-- v0.7.29 — Issue 29. Structured climate-scenario picker.
                  Shown when axis = climate_scenario. Each row is a
                  {mode, severity} pair; empty mode means "skip this row".
                  Up to 5 used by the backend (sensitivityMaxValues). -->
@@ -424,7 +426,7 @@
           <div id="sensBudget" class="budget-meter"></div>
           <div id="sensStatus" class="status"></div>
           <div id="sensVerdict" class="sens-verdict" hidden></div>
-          <!-- v0.7.28 — Issue 31. Climate-robustness Decision Report
+          <!-- v0.7.29 — Issue 31. Climate-robustness Decision Report
                section. Rendered only when the sweep used the
                climate_scenario axis and produced ≥ 2 scenarios. -->
           <div id="sensClimateRobustness" class="sens-verdict" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
@@ -517,7 +519,7 @@
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
           <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
-          <!-- v0.7.28 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
+          <!-- v0.7.29 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
                Rendered from decision.edit_decisions; populated whenever the
                run ranked any candidate edits. -->
           <div id="editDecisionsCard" class="ngt-regulatory-card" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>

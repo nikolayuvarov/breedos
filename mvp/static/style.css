@@ -282,7 +282,7 @@ input.over-budget { border-color: var(--danger); background: rgba(255, 154, 154,
 .ngt-badge.ngt-1 { color: var(--ok); border-color: var(--ok); background: rgba(143, 255, 209, 0.08); }
 .ngt-badge.ngt-2 { color: var(--warn); border-color: var(--warn); background: rgba(255, 211, 140, 0.08); }
 .ngt-badge.ngt-unclassifiable { color: var(--muted); border-color: var(--muted); background: rgba(155, 177, 173, 0.08); }
-/* v0.7.28 — Issue 07. Edit-vs-cross-vs-wait badge. Same pill shape as
+/* v0.7.29 — Issue 07. Edit-vs-cross-vs-wait badge. Same pill shape as
    the NGT badge; the colour palette differentiates the action class:
    EDIT = action (accent green), CROSS = continue (blue), WAIT = caution
    (warn amber), unknown = muted. Tooltip carries the reason / posture /

@@ -7,6 +7,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.29] - 2026-06-27
+
+### Added — Prediction-output integration (Issue 08)
+
+Closes `issues-breedos/08-prediction-output-integration.md` (P2). The
+upload workflow gains a fifth optional CSV, and the engine gains a
+new strategy that demonstrates BreedOS's product positioning:
+**decision layer above** external prediction pipelines, not a
+replacement for them.
+
+**New `predictions.csv` upload table** (`id, gebv[, uncertainty]`):
+- Parsed by `parseUploadPredictions` in `mvp/upload.go`.
+- Cross-validated against the genotype CSV: every predictions id
+  MUST exist in the genotype id column. Mismatch returns 400 with
+  the count and first rogue id named in the error body.
+- Surfaced in the import summary as `used_by_engine: predictions
+  (as gen-0 GEBV-aware selection signal in the imported_gebv
+  strategy)`.
+
+**New `imported_gebv` strategy** (advanced set only, auto-surfaced
+when the upload carries predictions):
+- Scores gen-0 selection by the imported GEBV, standardised against
+  the simulator's true-trait moments so it lives on the same
+  z-score scale as the other strategies.
+- From gen ≥ 1 falls back to internal genomic scoring because
+  offspring identities are not tracked through reproduction. NaN
+  entries (missing predictions for an individual) also fall back
+  per-individual.
+- Carries `UseImportedGEBV` flag on `strategyConfig` and a
+  per-strategy `Gen0GEBV []float64` slice (populated once in
+  `runSimulation` after the upload is loaded).
+
+**`selectParents` signature change:** now takes a `gen int` so the
+gen-0 path can opt into imported GEBVs while later cycles fall back.
+Single call site (in `simulateStrategy`); the multi-trait path is
+unchanged (the `imported_gebv` strategy is single-trait only — adding
+multi-trait support would require per-trait GEBV columns and is
+deferred).
+
+### Tests — 8 new
+
+`upload_test.go` adds:
+
+- Fixture parse happy-path (30 rows, has_uncertainty=true, sample
+  ids).
+- Wrong-header rejection (first col must be `id`).
+- Missing-gebv-column rejection (second col must be `gebv`).
+- Non-numeric GEBV rejection.
+- Duplicate-id rejection.
+- Multipart handler rejects mismatched ids (predictions id not
+  present in genotype id column).
+- `imported_gebv` strategy appears iff upload carries predictions.
+- `gen0GEBVOverride` slice aligns with accession ids (spot-check
+  `plant_001 = -0.317`).
+- End-to-end: `imported_gebv` strategy completes a full run and
+  produces non-zero final metrics.
+
+Full suite green.
+
+### Issue closed
+
+- `issues-breedos/08-prediction-output-integration.md` →
+  `issues-breedos-done/08-prediction-output-integration.md.done`.
+
+### Non-goals (per issue, deferred)
+
+- rrBLUP / BGLR / sommer / AlphaSimR implementations inside BreedOS
+  (explicitly out of scope by Issue 12 / ROADMAP.md).
+- Claims about prediction accuracy — BreedOS consumes the GEBVs the
+  operator supplies; it does not score them.
+- Marker-effect overrides (the issue's "optional marker effects"
+  input is deferred to a future issue; predictions-per-individual
+  is the v0.7.29 path).
+- Multi-trait GEBV columns — single-trait only for this release.
+
 ## [0.7.28] - 2026-06-27
 
 ### Added — Climate-sweeps pack complete (Issues 29, 30, 31)

@@ -290,6 +290,173 @@ func TestUploadHandler_HappyPath(t *testing.T) {
 	}
 }
 
+// v0.7.29 — Issue 08. Predictions-upload tests.
+
+func TestParseUploadPredictions_Fixture(t *testing.T) {
+	p, err := parseUploadPredictions(mustRead(t, "fixtures/upload-toy/predictions.csv"))
+	if err != nil {
+		t.Fatalf("parse predictions: %v", err)
+	}
+	if p.Rows != 30 {
+		t.Errorf("Rows = %d, want 30", p.Rows)
+	}
+	if !p.HasUncertainty {
+		t.Errorf("fixture has an uncertainty column; HasUncertainty should be true")
+	}
+	if _, ok := p.values["plant_001"]; !ok {
+		t.Errorf("values map should contain plant_001")
+	}
+	if len(p.SampleIDs) != 5 {
+		t.Errorf("SampleIDs = %d, want 5", len(p.SampleIDs))
+	}
+}
+
+func TestParseUploadPredictions_WrongHeader(t *testing.T) {
+	bad := []byte("plant,gebv\nplant_001,1.0\n")
+	_, err := parseUploadPredictions(bad)
+	if err == nil || !strings.Contains(err.Error(), "must be 'id'") {
+		t.Fatalf("expected 'id' header error, got %v", err)
+	}
+}
+
+func TestParseUploadPredictions_MissingGEBVColumn(t *testing.T) {
+	bad := []byte("id,score\nplant_001,1.0\n")
+	_, err := parseUploadPredictions(bad)
+	if err == nil || !strings.Contains(err.Error(), "'gebv'") {
+		t.Fatalf("expected 'gebv' column error, got %v", err)
+	}
+}
+
+func TestParseUploadPredictions_NonNumericGEBV(t *testing.T) {
+	bad := []byte("id,gebv\nplant_001,abc\n")
+	_, err := parseUploadPredictions(bad)
+	if err == nil {
+		t.Fatalf("expected non-numeric GEBV error")
+	}
+}
+
+func TestParseUploadPredictions_DuplicateID(t *testing.T) {
+	bad := []byte("id,gebv\nplant_001,1.0\nplant_001,2.0\n")
+	_, err := parseUploadPredictions(bad)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate-id error, got %v", err)
+	}
+}
+
+func TestUploadHandler_PredictionsIDMustMatchGenotype(t *testing.T) {
+	resetUploadCache()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, _ := mw.CreateFormFile("genotype", "genotype.csv")
+	fw.Write(mustRead(t, "fixtures/upload-toy/genotype.csv"))
+	fw, _ = mw.CreateFormFile("predictions", "predictions.csv")
+	// Use a predictions file with one rogue id not present in genotype.
+	fw.Write([]byte("id,gebv\nplant_001,1.0\nplant_999,2.0\n"))
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rr := httptest.NewRecorder()
+	uploadHandler(rr, req)
+	if rr.Code != 400 {
+		t.Fatalf("expected 400 for id mismatch, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "plant_999") {
+		t.Errorf("error should name the rogue id, got %s", rr.Body.String())
+	}
+}
+
+func TestImportedGEBV_StrategyAppearsOnlyWhenUploadHasPredictions(t *testing.T) {
+	resetUploadCache()
+	// Upload without predictions → strategy must not appear.
+	g, _ := parseUploadGenotype(mustRead(t, "fixtures/upload-toy/genotype.csv"))
+	id := putUpload(&UploadedDataset{Genotype: g})
+	req := SimRequest{
+		Seed: 1, PopulationSize: 30, Markers: 80, QTLCount: 10,
+		Generations: 3, SelectionPercent: 20, Heritability: 0.5,
+		MutationRate: 0.001, StrategySet: "advanced", Replicates: 1,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.3,
+		Upload: id,
+	}
+	for _, s := range buildStrategyConfigs(req) {
+		if s.Code == "imported_gebv" {
+			t.Errorf("imported_gebv must not appear when upload has no predictions")
+		}
+	}
+
+	// Now upload WITH predictions.
+	resetUploadCache()
+	g2, _ := parseUploadGenotype(mustRead(t, "fixtures/upload-toy/genotype.csv"))
+	p, _ := parseUploadPredictions(mustRead(t, "fixtures/upload-toy/predictions.csv"))
+	id2 := putUpload(&UploadedDataset{Genotype: g2, Predictions: p})
+	req.Upload = id2
+	found := false
+	for _, s := range buildStrategyConfigs(req) {
+		if s.Code == "imported_gebv" {
+			found = true
+			if !s.UseImportedGEBV {
+				t.Errorf("strategy must carry UseImportedGEBV=true")
+			}
+		}
+	}
+	if !found {
+		t.Errorf("imported_gebv must appear when upload has predictions")
+	}
+}
+
+func TestGen0GEBVOverride_AlignsWithAccessionIDs(t *testing.T) {
+	resetUploadCache()
+	g, _ := parseUploadGenotype(mustRead(t, "fixtures/upload-toy/genotype.csv"))
+	p, _ := parseUploadPredictions(mustRead(t, "fixtures/upload-toy/predictions.csv"))
+	id := putUpload(&UploadedDataset{Genotype: g, Predictions: p})
+	override := gen0GEBVOverride(id, g.dataset.accessionIDs)
+	if override == nil {
+		t.Fatalf("override should be non-nil when upload has predictions")
+	}
+	if len(override) != len(g.dataset.accessionIDs) {
+		t.Errorf("override length %d, want %d", len(override), len(g.dataset.accessionIDs))
+	}
+	// Spot-check: position 0 corresponds to plant_001 in the fixture;
+	// predictions for plant_001 has gebv = -0.317.
+	if override[0] != -0.317 {
+		t.Errorf("override[0] (plant_001 GEBV) = %v, want -0.317", override[0])
+	}
+}
+
+func TestRunSimulation_ImportedGEBVStrategyEndToEnd(t *testing.T) {
+	// End-to-end smoke: a run with the imported_gebv strategy in the
+	// advanced set, using an upload that carries predictions, must
+	// complete without error and produce a result entry for the new
+	// strategy alongside the rest.
+	resetUploadCache()
+	g, _ := parseUploadGenotype(mustRead(t, "fixtures/upload-toy/genotype.csv"))
+	p, _ := parseUploadPredictions(mustRead(t, "fixtures/upload-toy/predictions.csv"))
+	id := putUpload(&UploadedDataset{Genotype: g, Predictions: p})
+	req := SimRequest{
+		Seed: 1, PopulationSize: 30, Markers: 80, QTLCount: 10,
+		Generations: 3, SelectionPercent: 20, Heritability: 0.5,
+		MutationRate: 0.001, StrategySet: "advanced", Replicates: 1,
+		InbreedingLimit: 0.25, DiversityLossLimit: 0.3,
+		Upload: id,
+	}
+	resp, err := runSimulation(req)
+	if err != nil {
+		t.Fatalf("runSimulation: %v", err)
+	}
+	found := false
+	for _, s := range resp.Strategies {
+		if s.Code == "imported_gebv" {
+			found = true
+			if s.Final.GeneticGain == 0 && s.Final.TraitMean == 0 {
+				t.Errorf("imported_gebv strategy completed but produced no metrics: %+v", s.Final)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("imported_gebv strategy missing from end-to-end response")
+	}
+}
+
 func TestUploadHandler_MissingGenotype(t *testing.T) {
 	resetUploadCache()
 	var buf bytes.Buffer

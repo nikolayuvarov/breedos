@@ -20,12 +20,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+func nanFloat() float64 { return math.NaN() }
 
 const (
 	uploadMaxBytes  = 16 * 1024 * 1024 // 16 MB hard cap per file. Anything larger is rejected with a clear error.
@@ -43,6 +46,10 @@ type UploadedDataset struct {
 	Phenotype  *uploadedPhenotype `json:"phenotype,omitempty"`
 	Pedigree   *uploadedPedigree  `json:"pedigree,omitempty"`
 	Edits      *uploadedEdits     `json:"edits,omitempty"`
+	// v0.7.29 — Issue 08. External GEBV / breeding-value predictions
+	// from rrBLUP / BGLR / sommer / AlphaSimR or any other prediction
+	// pipeline. Consumed by the imported_gebv strategy at gen 0.
+	Predictions *uploadedPredictions `json:"predictions,omitempty"`
 	UsedByEngine []string         `json:"used_by_engine"`         // human-readable list of which tables actually feed the simulator.
 	IgnoredByEngine []string      `json:"ignored_by_engine"`      // counterpart: parsed but unused.
 }
@@ -72,6 +79,28 @@ type uploadedPedigree struct {
 type uploadedEdits struct {
 	Rows          int                 `json:"rows"`
 	Entries       []uploadedEditEntry `json:"entries"`         // small enough to round-trip whole.
+}
+
+// v0.7.29 — Issue 08. External genomic-prediction outputs (rrBLUP /
+// BGLR / sommer / AlphaSimR / internal pipelines). Accepted as a CSV
+// "id, gebv[, uncertainty]". Used at gen 0 selection by the
+// `imported_gebv` strategy (and any future GEBV-aware strategies);
+// gen ≥ 1 falls back to the simulator's internal genomic signal
+// because offspring identities are not tracked through reproduction.
+type uploadedPredictions struct {
+	Rows        int                       `json:"rows"`
+	TraitName   string                    `json:"trait_name,omitempty"`
+	Min         float64                   `json:"min"`
+	Max         float64                   `json:"max"`
+	Mean        float64                   `json:"mean"`
+	HasUncertainty bool                   `json:"has_uncertainty"`
+	SampleIDs   []string                  `json:"sample_ids"`         // first up to 5 ids.
+	values      map[string]predictionRow  // id → {gebv, uncertainty}; not JSON-serialised; the simulator-consumption surface.
+}
+
+type predictionRow struct {
+	GEBV        float64
+	Uncertainty float64 // 0 when not provided.
 }
 
 type uploadedEditEntry struct {
@@ -291,6 +320,95 @@ func parseUploadEdits(raw []byte) (*uploadedEdits, error) {
 	return out, nil
 }
 
+// parseUploadPredictions expects header `id, gebv[, uncertainty[, trait]]`
+// (case-insensitive column names). The id column must match exactly
+// the genotype CSV's id column at the row level; ID lookup happens
+// later, in the simulator's gen-0 selection path.
+//
+// Output `values` maps id → {gebv, uncertainty}. Uncertainty is 0
+// when the column is absent. The trait column (if present) is
+// captured in TraitName for display.
+func parseUploadPredictions(raw []byte) (*uploadedPredictions, error) {
+	lines := splitCSVLines(raw)
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("predictions CSV: need header + at least one data row")
+	}
+	headers := splitFields(lines[0])
+	if len(headers) < 2 {
+		return nil, fmt.Errorf("predictions CSV: header must have at least 2 columns (id, gebv)")
+	}
+	if !strings.EqualFold(strings.TrimSpace(headers[0]), "id") {
+		return nil, fmt.Errorf("predictions CSV: first column must be 'id', got %q", headers[0])
+	}
+	if !strings.EqualFold(strings.TrimSpace(headers[1]), "gebv") {
+		return nil, fmt.Errorf("predictions CSV: second column must be 'gebv', got %q", headers[1])
+	}
+	hasUncertainty := len(headers) >= 3 && strings.EqualFold(strings.TrimSpace(headers[2]), "uncertainty")
+	traitName := ""
+	if len(headers) >= 4 && strings.EqualFold(strings.TrimSpace(headers[3]), "trait") {
+		// Trait column may carry a single trait name repeated per row;
+		// captured below on the first non-empty row.
+	} else if len(headers) >= 3 && !hasUncertainty {
+		// A third column that is not 'uncertainty' is treated as trait.
+		traitName = strings.TrimSpace(headers[2])
+	}
+
+	out := &uploadedPredictions{
+		HasUncertainty: hasUncertainty,
+		values:         make(map[string]predictionRow),
+	}
+	out.SampleIDs = make([]string, 0, 5)
+	first := true
+	for i, raw := range lines[1:] {
+		fields := splitFields(raw)
+		if len(fields) < 2 {
+			return nil, fmt.Errorf("predictions CSV: line %d has %d columns, expected ≥2", i+2, len(fields))
+		}
+		id := strings.TrimSpace(fields[0])
+		if id == "" {
+			return nil, fmt.Errorf("predictions CSV: line %d has empty id", i+2)
+		}
+		gebv, err := strconv.ParseFloat(strings.TrimSpace(fields[1]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("predictions CSV: line %d col 2 (gebv): %v", i+2, err)
+		}
+		row := predictionRow{GEBV: gebv}
+		if hasUncertainty && len(fields) >= 3 {
+			u, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+			if err != nil {
+				return nil, fmt.Errorf("predictions CSV: line %d col 3 (uncertainty): %v", i+2, err)
+			}
+			row.Uncertainty = u
+		}
+		if _, dup := out.values[id]; dup {
+			return nil, fmt.Errorf("predictions CSV: line %d duplicate id %q", i+2, id)
+		}
+		out.values[id] = row
+		if first {
+			out.Min, out.Max, out.Mean = gebv, gebv, gebv
+			out.TraitName = traitName
+			first = false
+		} else {
+			if gebv < out.Min {
+				out.Min = gebv
+			}
+			if gebv > out.Max {
+				out.Max = gebv
+			}
+			out.Mean += gebv
+		}
+		if len(out.SampleIDs) < 5 {
+			out.SampleIDs = append(out.SampleIDs, id)
+		}
+		out.Rows++
+	}
+	if out.Rows == 0 {
+		return nil, fmt.Errorf("predictions CSV: no data rows")
+	}
+	out.Mean = out.Mean / float64(out.Rows)
+	return out, nil
+}
+
 // splitCSVLines skips blank and #-comment lines (same convention as
 // parseDatasetCSV).
 func splitCSVLines(raw []byte) []string {
@@ -393,6 +511,43 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		out.IgnoredByEngine = append(out.IgnoredByEngine, "edits (simulator uses crispr_edits count, not uploaded marker-level edits; uploaded table is shown but not consumed)")
 	}
 
+	// v0.7.29 — Issue 08. Predictions (id, gebv[, uncertainty]).
+	if predFile, err := readFormFile(r, "predictions"); err != nil {
+		http.Error(w, "upload: predictions: "+err.Error(), http.StatusBadRequest)
+		return
+	} else if predFile != nil {
+		p, err := parseUploadPredictions(predFile)
+		if err != nil {
+			http.Error(w, "upload: predictions: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		// Cross-validation: every predictions.id must be present in
+		// genotype's accession IDs. Catches the most common silent
+		// failure (wrong file pair).
+		if out.Genotype != nil && out.Genotype.dataset != nil {
+			genoIDs := make(map[string]struct{}, len(out.Genotype.dataset.accessionIDs))
+			for _, id := range out.Genotype.dataset.accessionIDs {
+				genoIDs[id] = struct{}{}
+			}
+			missing := 0
+			var missingExample string
+			for id := range p.values {
+				if _, ok := genoIDs[id]; !ok {
+					missing++
+					if missingExample == "" {
+						missingExample = id
+					}
+				}
+			}
+			if missing > 0 {
+				http.Error(w, fmt.Sprintf("upload: predictions: %d id(s) not present in genotype CSV (first: %q). Predictions id column must match genotype id column.", missing, missingExample), http.StatusBadRequest)
+				return
+			}
+		}
+		out.Predictions = p
+		out.UsedByEngine = append(out.UsedByEngine, "predictions (as gen-0 GEBV-aware selection signal in the imported_gebv strategy)")
+	}
+
 	id := putUpload(out)
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
@@ -436,8 +591,8 @@ func uploadFixtureHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/upload-fixture/")
 	switch name {
-	case "genotype.csv", "phenotype.csv", "pedigree.csv", "edits.csv":
-		// ok
+	case "genotype.csv", "phenotype.csv", "pedigree.csv", "edits.csv", "predictions.csv":
+		// ok — v0.7.29 added predictions.csv to the allowlist.
 	default:
 		http.NotFound(w, r)
 		return
@@ -450,6 +605,50 @@ func uploadFixtureHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", "inline; filename=\""+name+"\"")
 	_, _ = w.Write(data)
+}
+
+// v0.7.29 — Issue 08. uploadHasPredictions returns true when the
+// upload id resolves to a cached upload that carries a predictions
+// table. Used by buildStrategyConfigs to decide whether to surface
+// the imported_gebv strategy.
+func uploadHasPredictions(uploadID string) bool {
+	if uploadID == "" {
+		return false
+	}
+	d, ok := getUpload(uploadID)
+	if !ok || d == nil || d.Predictions == nil {
+		return false
+	}
+	return d.Predictions.Rows > 0
+}
+
+// v0.7.29 — Issue 08. gen0GEBVOverride returns a length-N slice of
+// imported GEBVs indexed by population position, matched via
+// accession IDs from the upload's genotype. Positions whose accession
+// id has no prediction get math.NaN — the caller treats NaN as
+// "fall back to internal scoring for that individual". Returns nil
+// when no upload is set or the upload carries no predictions.
+//
+// The slice is meaningful at gen 0 only; later generations are
+// offspring whose ids are not in the predictions map.
+func gen0GEBVOverride(uploadID string, accessionIDs []string) []float64 {
+	if uploadID == "" || len(accessionIDs) == 0 {
+		return nil
+	}
+	d, ok := getUpload(uploadID)
+	if !ok || d == nil || d.Predictions == nil {
+		return nil
+	}
+	out := make([]float64, len(accessionIDs))
+	for i, id := range accessionIDs {
+		row, ok := d.Predictions.values[id]
+		if ok {
+			out[i] = row.GEBV
+		} else {
+			out[i] = nanFloat()
+		}
+	}
+	return out
 }
 
 // resetUploadCache is exposed for tests.
