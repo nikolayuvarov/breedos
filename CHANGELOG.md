@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.30] - 2026-06-27
+
+### Added — End-to-end breeder workflow (Issue 10)
+
+Closes `issues-breedos/10-end-to-end-breeder-workflow.md` (P2). UX
+polish: the demo now reads as a coherent 8-step workflow rather than
+"parameter panel + charts".
+
+**Workflow stepper (top of demo):** new 8-step horizontal list with
+anchor links to each region: Data → Confirm → Constraints → Run →
+Feasibility → Decision Report → Export → Next step. Each step has a
+short subtitle so the operator knows what happens there before
+clicking.
+
+**Anchor map added across existing cards:**
+
+- `#step-data` — left sticky panel (Simulation inputs).
+- `#step-confirm` — `summary` summary-grid (the run header cards).
+- `#step-constraints` — the constraints `<details>` block.
+- `#step-run` — the button-grid in the left panel.
+- `#step-feasibility` — the Strategy recommendations card.
+- `#step-report` — the Decision engine output card.
+- `#step-export` and `#step-next` — new bottom Export & next-step
+  card.
+
+**`↓ Jump to Decision Report` button** in the left button-grid.
+Disabled until `currentData` exists; enabled after the first
+successful run; clicking smooth-scrolls to `#step-report`.
+
+**Empty-state placeholder:** new dashed-border card at the top of
+the results panel before the first run. Explains the workflow
+shape (summary cards → Decision panel → sensitivity → strategy
+table → Pareto → AFS histogram → candidate-edit table) so the
+operator does not stare at empty charts wondering what to expect.
+Hidden as soon as `currentData` is set.
+
+**Bottom Export & next-step card:** duplicate "Export full run
+(JSON)" and "Copy plain-text summary" buttons (so the operator
+who scrolled to the report does not have to scroll back up), plus
+a five-point checklist for the actual next step:
+
+- climate-stable → plan around the best-feasible strategy;
+- climate-fragile → choose by expected weather year;
+- EDIT-flagged loci → route to Benchling / Synthego / CRISPResso
+  for guide design (BreedOS does not design guides);
+- imported_gebv winning → record prediction-pipeline version in
+  the exported JSON for audit;
+- new run → change inputs, press Run, previous run shown as
+  dotted overlay.
+
+**Export coverage audit:** the existing `exportJsonBtn` exports
+`currentData` which already contains `request`, `decision`,
+`strategies`, `candidate_edits`, `notes`. Issue 10 acceptance
+criterion #3 ("Export includes request, constraints, strategy
+results, and report") satisfied by the existing implementation —
+constraints live on `request.*`, the report lives on `decision`.
+
+### CSS
+
+- New `.workflow-stepper` class (horizontal list, wraps on narrow
+  screens, blue accent for step titles, muted subtitles).
+- `html { scroll-behavior: smooth; }` was already set; anchor
+  jumps animate.
+
+### Tests
+
+No new tests — this release is HTML / CSS / JS-only and adds no
+backend surface. Full Go test suite stays green.
+
+### Issue closed
+
+- `issues-breedos/10-end-to-end-breeder-workflow.md` →
+  `issues-breedos-done/10-end-to-end-breeder-workflow.md.done`.
+
+### Board state after this release
+
+`issues-breedos/` active board is now **empty** — all 12 originally-
+numbered issues + 5 NGT pack + 5 Holstein pack + 5 Methane pack + 5
+Climate pack are closed. The next active work surfaces from
+`issues-promptbio/` (engine extension scaffolded but not yet
+implemented), `issues-science/` (12 learning modules + 12 textbooks
+to write), `issues-human/` (outreach + advisor + domain-review-loop
+cycle), `issues-tools/` (12 automation tools, mostly iterations),
+or new issues filed via the domain-review feedback loop.
+
 ## [0.7.29] - 2026-06-27
 
 ### Added — Prediction-output integration (Issue 08)

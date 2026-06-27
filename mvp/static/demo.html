@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.29 — Imported GEBV selection (Issue 08)</div>
+      <div class="kicker">MVP v0.7.30 — End-to-end breeder workflow (Issue 10)</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -31,10 +31,23 @@
       <p class="note">
         Small populations are intentionally allowed. Try N=8 or N=12 to see rapid drift and fixation. Runs are manual: if parameters are unchanged, recalculation is skipped. The Run simulation button shows worker-pool progress. Solid lines are the current run; dotted lines show the previous run.
       </p>
+      <!-- v0.7.30 — Issue 10. End-to-end workflow stepper. Eight steps
+           from data → decision; clicking a step scrolls / focuses the
+           corresponding region. Compact horizontal layout. -->
+      <ol class="workflow-stepper" aria-label="End-to-end breeder workflow">
+        <li><a href="#step-data">1. Data</a><small>synthetic, built-in real, or uploaded CSVs</small></li>
+        <li><a href="#step-confirm">2. Confirm</a><small>population &amp; data summary</small></li>
+        <li><a href="#step-constraints">3. Constraints</a><small>inbreeding, diversity, risk floors</small></li>
+        <li><a href="#step-run">4. Run</a><small>compare strategies</small></li>
+        <li><a href="#step-feasibility">5. Feasibility</a><small>which strategies make the cut</small></li>
+        <li><a href="#step-report">6. Decision Report</a><small>plain-language verdict</small></li>
+        <li><a href="#step-export">7. Export</a><small>JSON / summary text</small></li>
+        <li><a href="#step-next">8. Next step</a><small>cross plan, edit set, or new run</small></li>
+      </ol>
     </div>
 
     <div class="demo-grid">
-      <aside class="card sticky-panel">
+      <aside class="card sticky-panel" id="step-data">
         <h2 style="font-size:28px">Simulation inputs</h2>
 
         <div class="preset-row" aria-label="Simulation presets">
@@ -340,7 +353,7 @@
             <p class="note" id="selectionIndexPreview" style="margin-top:8px;"></p>
           </details>
 
-          <details class="constraints-group">
+          <details class="constraints-group" id="step-constraints">
             <summary><strong>Program constraints</strong> <span class="constraints-hint">(optional — 0 = no constraint)</span></summary>
             <p class="constraints-explainer">Hard caps from your breeding program. Strategies that fail any active constraint are marked infeasible; the decision report highlights the best feasible strategy separately.</p>
 
@@ -376,9 +389,10 @@
           </details>
 
 
-          <div class="button-grid">
+          <div class="button-grid" id="step-run">
             <button id="runBtn" class="btn primary" type="button">Run simulation</button>
             <button id="clearCompareBtn" class="btn" type="button">Clear comparison</button>
+            <button id="jumpToReportBtn" class="btn" type="button" disabled title="Available after the first run completes">↓ Jump to Decision Report</button>
             <button id="copySummaryBtn" class="btn" type="button">Copy summary</button>
             <button id="exportJsonBtn" class="btn" type="button">Export JSON</button>
           </div>
@@ -388,9 +402,27 @@
       </aside>
 
       <section class="results">
-        <div id="summary" class="summary-grid"></div>
+        <!-- v0.7.30 — Issue 10. Empty-state placeholder shown before
+             the first run. Hidden by app.js as soon as currentData is
+             set. Tells the operator the workflow shape without
+             scrolling through empty charts. -->
+        <div class="card" id="emptyStateCard" style="border-style:dashed;">
+          <h2 style="font-size:20px; margin-top:0; color:var(--accent2);">No run yet</h2>
+          <p style="margin:0 0 10px;">Press <strong>Run simulation</strong> in the left panel to compare selection strategies on the configured population. Results will appear here.</p>
+          <ol style="margin:0 0 10px 18px; padding:0; color:var(--muted); font-size:13px; line-height:1.7;">
+            <li>The summary cards at the top compare best-gain / best-risk-adjusted / best-feasible recommendations.</li>
+            <li>The Decision Engine Output panel synthesises the verdict in plain language.</li>
+            <li>The Sensitivity sweep panel asks whether the recommendation holds if h² / selection / horizon / climate shifts.</li>
+            <li>The strategy table, Pareto chart, allele-frequency histogram, and per-generation charts give the visual evidence behind the verdict.</li>
+            <li>The candidate-edit table classifies each edit as EDIT / CROSS / WAIT with reason on hover (Issue 07).</li>
+            <li>Export the full run as JSON (button on the left) for follow-up analysis or audit.</li>
+          </ol>
+          <p style="margin:10px 0 0; font-size:13px; color:var(--muted);">If this is your first time, leave the defaults and just press Run — a balanced configuration is preloaded.</p>
+        </div>
 
-        <div class="card">
+        <div id="summary" class="summary-grid" data-step-anchor="step-confirm"></div>
+
+        <div class="card" id="step-report">
           <h2 style="font-size:28px">Decision engine output</h2>
           <div id="decisionPanel"></div>
         </div>
@@ -404,7 +436,7 @@
               <option value="generations">Generations horizon</option>
             </select></label>
             <label class="sens-label sens-values-label" id="sensValuesLabel">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
-            <!-- v0.7.29 — Issue 29. Structured climate-scenario picker.
+            <!-- v0.7.30 — Issue 29. Structured climate-scenario picker.
                  Shown when axis = climate_scenario. Each row is a
                  {mode, severity} pair; empty mode means "skip this row".
                  Up to 5 used by the backend (sensitivityMaxValues). -->
@@ -426,7 +458,7 @@
           <div id="sensBudget" class="budget-meter"></div>
           <div id="sensStatus" class="status"></div>
           <div id="sensVerdict" class="sens-verdict" hidden></div>
-          <!-- v0.7.29 — Issue 31. Climate-robustness Decision Report
+          <!-- v0.7.30 — Issue 31. Climate-robustness Decision Report
                section. Rendered only when the sweep used the
                climate_scenario axis and produced ≥ 2 scenarios. -->
           <div id="sensClimateRobustness" class="sens-verdict" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
@@ -519,7 +551,7 @@
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
           <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
-          <!-- v0.7.29 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
+          <!-- v0.7.30 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
                Rendered from decision.edit_decisions; populated whenever the
                run ranked any candidate edits. -->
           <div id="editDecisionsCard" class="ngt-regulatory-card" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
@@ -535,7 +567,7 @@
           </div>
         </div>
 
-        <div class="card">
+        <div class="card" id="step-feasibility">
           <h2 style="font-size:28px">Strategy recommendations</h2>
           <div class="table-wrap">
             <table>
@@ -559,6 +591,27 @@
               </thead>
               <tbody id="strategyTable"></tbody>
             </table>
+          </div>
+        </div>
+        <!-- v0.7.30 — Issue 10. Step 7 (Export) and Step 8 (Next)
+             card. Anchored from the workflow stepper at the top; gives
+             the operator a clear "what now" after reading the report. -->
+        <div class="card" id="step-export" style="border-color:var(--accent2);">
+          <h2 style="font-size:24px; margin-top:0;">Export &amp; next step</h2>
+          <p class="note" style="margin:0 0 10px;">The run above is now in the browser only. Export it before closing the tab or running a new configuration — there is no server-side persistence.</p>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="exportJsonBtn2" class="btn" type="button" title="Same as the Export JSON button in the left panel">↓ Export full run (JSON)</button>
+            <button id="copySummaryBtn2" class="btn" type="button" title="Same as the Copy summary button in the left panel">⧉ Copy plain-text summary</button>
+          </div>
+          <div id="step-next" style="margin-top:18px;">
+            <h3 style="margin:0 0 8px; color:var(--accent2); font-size:16px;">Next step</h3>
+            <ol style="margin:0 0 0 18px; padding:0; color:var(--muted); font-size:13px; line-height:1.7;">
+              <li>If the recommendation is <strong>stable across the climate sweep</strong>, plan the next breeding cycle around the best-feasible strategy named above.</li>
+              <li>If the recommendation is <strong>fragile</strong>, choose the strategy explicitly for the weather year you expect (the climate-robustness section names the alternative).</li>
+              <li>If the candidate-edit table flagged <strong>EDIT</strong> rows, route those loci to your CRISPR pipeline (Benchling / Synthego / CRISPResso) for guide-RNA design — BreedOS does not design guides.</li>
+              <li>If you uploaded predictions and the <code>imported_gebv</code> strategy won, the GEBVs from your prediction pipeline are doing real work in this run; document the prediction-pipeline version in the exported JSON for audit.</li>
+              <li>For a new run with different parameters: change the inputs on the left and press Run simulation again. The previous run is overlaid as dotted lines on the charts for direct comparison.</li>
+            </ol>
           </div>
         </div>
       </section>
