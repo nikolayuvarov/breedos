@@ -36,11 +36,25 @@ const (
 type SensitivityRequest struct {
 	Base   SimRequest `json:"base"`
 	Axis   string     `json:"axis"`
-	Values []float64  `json:"values"`
+	Values []float64  `json:"values,omitempty"`
+	// v0.7.28 — Issue 29. Used when Axis == axisClimateScenario.
+	// Numeric `Values` is ignored in that case; each entry here is a
+	// {mode, severity} pair applied to scen.Climate per simulation.
+	ClimateValues []ClimateScenario `json:"climate_values,omitempty"`
 }
+
+// v0.7.28 — Issue 29. Sentinel for the structured axis. Distinct from
+// the float-valued static axes (heritability / selection_percent /
+// generations) and from the trait_weight:<name> dynamic family.
+const axisClimateScenario = "climate_scenario"
 
 type SensitivityScenario struct {
 	AxisValue        float64 `json:"axis_value"`
+	// v0.7.28 — Issue 29. Human-readable axis-value rendering. Empty
+	// for numeric axes (UI falls back to formatting AxisValue);
+	// populated for the climate_scenario axis to render
+	// "heat_burst_anthesis (sev 0.50)" instead of a meaningless 0/1/2.
+	AxisLabel        string  `json:"axis_label,omitempty"`
 	BestFeasibleCode string  `json:"best_feasible_code"`
 	BestFeasibleName string  `json:"best_feasible_name"`
 	GeneticGain      float64 `json:"genetic_gain"`
@@ -65,9 +79,14 @@ type SensitivitySummary struct {
 type SensitivityResult struct {
 	Base      SimRequest            `json:"base"`
 	Axis      string                `json:"axis"`
-	Values    []float64             `json:"values"`
+	Values    []float64             `json:"values,omitempty"`
+	// v0.7.28 — Issue 29. Populated only when Axis == axisClimateScenario.
+	ClimateValues []ClimateScenario     `json:"climate_values,omitempty"`
 	Scenarios []SensitivityScenario `json:"scenarios"`
 	Summary   SensitivitySummary    `json:"summary"`
+	// v0.7.28 — Issue 31. Plain-language Decision Report section.
+	// Populated only when Axis == axisClimateScenario AND len(scenarios) >= 2.
+	ClimateRobustness *ClimateRobustness `json:"climate_robustness,omitempty"`
 }
 
 // Percent is float64 so the client can show fractional progress while a
@@ -142,9 +161,12 @@ func applyForAxis(scen *SimRequest, axis string, value float64) error {
 func validateSensitivityRequest(req SensitivityRequest) error {
 	// v0.7.23 — Issue B. Accept dynamic trait_weight:<name> axes
 	// when req.Base.Traits carries that name; static axes go through the
-	// existing fast-path catalog.
+	// existing fast-path catalog. v0.7.28 — Issue 29. Accept the
+	// structured climate_scenario axis.
 	axisOK := false
 	if _, ok := validSensitivityAxes[req.Axis]; ok {
+		axisOK = true
+	} else if req.Axis == axisClimateScenario {
 		axisOK = true
 	} else if strings.HasPrefix(req.Axis, traitWeightAxisPrefix) {
 		name := strings.TrimPrefix(req.Axis, traitWeightAxisPrefix)
@@ -156,16 +178,49 @@ func validateSensitivityRequest(req SensitivityRequest) error {
 		}
 	}
 	if !axisOK {
-		keys := make([]string, 0, len(validSensitivityAxes))
+		keys := make([]string, 0, len(validSensitivityAxes)+2)
 		for k := range validSensitivityAxes {
 			keys = append(keys, k)
 		}
+		keys = append(keys, axisClimateScenario)
 		if len(req.Base.Traits) > 0 {
 			for _, t := range req.Base.Traits {
 				keys = append(keys, traitWeightAxisPrefix+t.Name)
 			}
 		}
 		return fmt.Errorf("axis must be one of %s; got %q", strings.Join(keys, ", "), req.Axis)
+	}
+	// v0.7.28 — Issue 29. Climate-scenario axis is structured: validate
+	// climate_values, not numeric values.
+	if req.Axis == axisClimateScenario {
+		if len(req.ClimateValues) == 0 {
+			return errors.New("climate_values must be a non-empty list when axis = climate_scenario")
+		}
+		if len(req.ClimateValues) > sensitivityMaxValues {
+			return fmt.Errorf("at most %d climate values per sweep (v0.7.16 limit); got %d", sensitivityMaxValues, len(req.ClimateValues))
+		}
+		total := int64(0)
+		for i, cs := range req.ClimateValues {
+			if err := ValidateClimateScenario(&cs); err != nil {
+				return fmt.Errorf("climate_values[%d]: %v", i, err)
+			}
+			scen := req.Base
+			if len(req.Base.Traits) > 0 {
+				scen.Traits = append([]TraitConfig(nil), req.Base.Traits...)
+			}
+			normalizeRequest(&scen)
+			csCopy := cs
+			scen.Climate = &csCopy
+			strategies := buildStrategyConfigs(scen)
+			if err := validateRequest(scen, len(strategies)); err != nil {
+				return fmt.Errorf("climate_values[%d] (%s sev %.2f) invalid: %v", i, cs.Mode, cs.Severity, err)
+			}
+			total += simulationBudget(scen, len(strategies))
+		}
+		if total > sensitivityBudgetCap {
+			return fmt.Errorf("sensitivity sweep budget too high: sum of per-scenario budgets must be <= %d; got %d (reduce population, markers, generations, replicates, or number of climate scenarios)", sensitivityBudgetCap, total)
+		}
+		return nil
 	}
 	if len(req.Values) == 0 {
 		return errors.New("values must be a non-empty list")
@@ -285,22 +340,39 @@ func updateSensJob(id string, percent float64, message string, result *Sensitivi
 }
 
 func runSensitivityJob(jobID string, req SensitivityRequest) {
-	scenarios := make([]SensitivityScenario, 0, len(req.Values))
-	n := len(req.Values)
-	for i, v := range req.Values {
+	// v0.7.28 — Issue 29. Resolve cardinality + per-scenario apply
+	// uniformly across both value families.
+	n := scenarioCount(req)
+	scenarios := make([]SensitivityScenario, 0, n)
+	for i := 0; i < n; i++ {
 		scen := req.Base
 		// v0.7.23 — deep-copy traits for trait_weight axis.
 		if len(req.Base.Traits) > 0 {
 			scen.Traits = append([]TraitConfig(nil), req.Base.Traits...)
 		}
 		normalizeRequest(&scen)
-		if err := applyForAxis(&scen, req.Axis, v); err != nil {
-			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g): %v", i+1, req.Axis, v, err), true)
-			return
+		var axisValue float64
+		var axisLabel string
+		if req.Axis == axisClimateScenario {
+			cs := req.ClimateValues[i]
+			scen.Climate = &cs
+			axisValue = float64(i)
+			axisLabel = fmt.Sprintf("%s (sev %.2f)", cs.Mode, cs.Severity)
+		} else {
+			axisValue = req.Values[i]
+			if err := applyForAxis(&scen, req.Axis, axisValue); err != nil {
+				updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g): %v", i+1, req.Axis, axisValue, err), true)
+				return
+			}
 		}
 		// Outer progress at scenario boundary: i scenarios are done, current
 		// is about to start. Inner ticks below smoothly fill the gap.
-		baseLabel := fmt.Sprintf("scenario %d/%d: %s=%g", i+1, n, req.Axis, v)
+		baseLabel := fmt.Sprintf("scenario %d/%d: %s", i+1, n, req.Axis)
+		if axisLabel != "" {
+			baseLabel += " = " + axisLabel
+		} else {
+			baseLabel += fmt.Sprintf("=%g", axisValue)
+		}
 		updateSensJob(jobID, 100.0*float64(i)/float64(n), baseLabel+" — 0%", nil, "", false)
 
 		// v0.7.17: propagate inner progress so the bar moves continuously.
@@ -326,13 +398,23 @@ func runSensitivityJob(jobID string, req SensitivityRequest) {
 			innerProgress,
 			func(AFSSnapshot) {}) // snapshots ignored on sweep — chart noise.
 		if err != nil {
-			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s=%g) failed: %v", i+1, req.Axis, v, err), true)
+			updateSensJob(jobID, 100, "", nil, fmt.Sprintf("scenario %d (%s) failed: %v", i+1, scenLabel, err), true)
 			return
 		}
-		scenarios = append(scenarios, summarizeScenario(v, resp))
+		sc := summarizeScenario(axisValue, resp)
+		sc.AxisLabel = axisLabel
+		scenarios = append(scenarios, sc)
 	}
 	result := assembleSensitivityResult(req, scenarios)
 	updateSensJob(jobID, 100, "complete", result, "", true)
+}
+
+// v0.7.28 — Issue 29. Scenario count across both value families.
+func scenarioCount(req SensitivityRequest) int {
+	if req.Axis == axisClimateScenario {
+		return len(req.ClimateValues)
+	}
+	return len(req.Values)
 }
 
 // summarizeScenario picks the headline numbers we want in the sweep table
@@ -379,7 +461,15 @@ func summarizeScenario(axisValue float64, resp SimResponse) SensitivityScenario 
 // scenario whose axis value is closest to the value already in req.Base.
 func assembleSensitivityResult(req SensitivityRequest, scenarios []SensitivityScenario) *SensitivityResult {
 	baselineValue := baselineValueForAxis(req)
-	baselineIdx := nearestIndex(req.Values, baselineValue)
+	// v0.7.28 — Issue 29. For the climate_scenario axis, baselineValue
+	// IS the index (returned by baselineValueForAxis); for numeric
+	// axes we still need nearestIndex to find the closest scenario.
+	var baselineIdx int
+	if req.Axis == axisClimateScenario {
+		baselineIdx = int(baselineValue)
+	} else {
+		baselineIdx = nearestIndex(req.Values, baselineValue)
+	}
 	var baselineCode, baselineName string
 	if baselineIdx >= 0 && baselineIdx < len(scenarios) {
 		baselineCode = scenarios[baselineIdx].BestFeasibleCode
@@ -414,19 +504,35 @@ func assembleSensitivityResult(req SensitivityRequest, scenarios []SensitivitySc
 	case switches == 0:
 		summary.Stable = true
 		summary.Verdict = "stable"
-		summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy %q stays the same across all %d scenarios. The recommendation is robust to changes in %s within the sampled range.", baselineCode, len(scenarios), req.Axis))
+		// v0.7.28 — Issue 29. Axis-specific wording so climate sweeps
+		// read as "climate-robust" rather than "robust to changes in
+		// climate_scenario".
+		if req.Axis == axisClimateScenario {
+			summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy %q stays the same across all %d climate scenarios. The recommendation is climate-robust within the sampled stress modes.", baselineCode, len(scenarios)))
+		} else {
+			summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy %q stays the same across all %d scenarios. The recommendation is robust to changes in %s within the sampled range.", baselineCode, len(scenarios), req.Axis))
+		}
 	default:
 		summary.Stable = false
 		summary.Verdict = "fragile"
-		summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy changes in %d of %d scenarios. The single-run recommendation %q may not hold if %s differs from the baseline.", switches, len(scenarios), baselineCode, req.Axis))
+		if req.Axis == axisClimateScenario {
+			summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy switches in %d of %d climate scenarios. The single-run recommendation %q is weather-year dependent — choose the strategy explicitly for the expected stress regime.", switches, len(scenarios), baselineCode))
+		} else {
+			summary.Notes = append(summary.Notes, fmt.Sprintf("Best-feasible strategy changes in %d of %d scenarios. The single-run recommendation %q may not hold if %s differs from the baseline.", switches, len(scenarios), baselineCode, req.Axis))
+		}
 	}
-	return &SensitivityResult{
-		Base:      req.Base,
-		Axis:      req.Axis,
-		Values:    req.Values,
-		Scenarios: scenarios,
-		Summary:   summary,
+	result := &SensitivityResult{
+		Base:          req.Base,
+		Axis:          req.Axis,
+		Values:        req.Values,
+		ClimateValues: req.ClimateValues,
+		Scenarios:     scenarios,
+		Summary:       summary,
 	}
+	// v0.7.28 — Issue 31. Attach the climate-robustness section when
+	// the axis is climate_scenario and we sampled ≥ 2 scenarios.
+	result.ClimateRobustness = buildClimateRobustnessSection(req, scenarios, summary)
+	return result
 }
 
 func baselineValueForAxis(req SensitivityRequest) float64 {
@@ -437,6 +543,17 @@ func baselineValueForAxis(req SensitivityRequest) float64 {
 		return req.Base.SelectionPercent
 	case "generations":
 		return float64(req.Base.Generations)
+	case axisClimateScenario:
+		// v0.7.28 — Issue 29. Baseline = the "normal" mode if the
+		// operator included it; otherwise scenario 0. Returns the
+		// chosen index as float64 so the nearest-index lookup
+		// downstream picks the right row.
+		for i, cs := range req.ClimateValues {
+			if cs.Mode == "normal" {
+				return float64(i)
+			}
+		}
+		return 0
 	}
 	return 0
 }

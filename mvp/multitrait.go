@@ -485,8 +485,11 @@ func runMultiTraitSimulation(req SimRequest, progress progressFunc, snapshot sna
 			// v0.7.24 — Issue 28. Apply climate penalty to each per-trait
 			// trajectory so PerTraitGain (computed from the last point of
 			// each trajectory below) and chart values reflect the penalty.
+			// v0.7.28 — Issue 30. Per-strategy climate-penalty discount,
+			// applied to per-trait trajectories in multi-trait runs too.
+			discount := climateDiscountForStrategy(cfg, req)
 			for t := range agg.PerTraitMetrics {
-				applyClimatePenaltyToMetrics(agg.PerTraitMetrics[t], req.Climate)
+				applyClimatePenaltyToMetricsWithDiscount(agg.PerTraitMetrics[t], req.Climate, discount)
 			}
 		}
 		results = append(results, agg)

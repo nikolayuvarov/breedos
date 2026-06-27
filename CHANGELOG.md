@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.28] - 2026-06-27
+
+### Added — Climate-sweeps pack complete (Issues 29, 30, 31)
+
+Closes the last three issues in the Climate-sweeps pack
+(`issues-breedos/29..31`). The v0.9 climate workflow is now end-to-end:
+sweep across climate scenarios, optionally enable ancestral
+introgression as a hedge strategy, and read the plain-language verdict
+in the Decision Report.
+
+**Issue 29 — Climate-scenario sensitivity sweep.**
+The v0.7.16/17 sweep engine gains a new axis: `climate_scenario`. The
+operator picks up to 5 `{mode, severity}` `ClimateScenario` rows (a
+structured form replaces the comma-separated numeric input). The
+sweep runs the simulator once per row, assigning `scen.Climate` per
+scenario. Verdict text adapts:
+
+- stable → "climate-robust within the sampled stress modes"
+- fragile → "weather-year dependent — choose strategy explicitly for
+  the expected stress regime"
+
+Backend: new `ClimateValues []ClimateScenario` field on
+`SensitivityRequest`; new `axis_label` field on `SensitivityScenario`
+so the UI renders `"heat_burst_anthesis (sev 0.50)"` instead of a
+numeric index; `baselineValueForAxis` favours the `"normal"` mode if
+present, else scenario 0. `SensitivityResult.ClimateValues` round-
+trips so clients can replay.
+
+UI: dataset-style structured 5-row picker in the sensitivity panel.
+
+**Issue 30 — Ancestral-allele introgression strategy.**
+New `ancestral_introgression` strategy in the advanced strategy set,
+opt-in when `req.AncestralIntroPercent > 0` (hard cap 25%, validated).
+The strategy models the planning question "what if we seed landrace
+or wild-relative lines into the founder population?":
+
+- At gen 0, the last K = round(N × pct/100) individuals are
+  re-rolled with a Bernoulli-biased low-favourable-allele draw
+  (P(favourable) = 0.30 vs the modern 0.50), dragging base trait
+  mean down.
+- The recorded climate penalty for this strategy is multiplied by
+  `1 − pct × (1 − stress_tolerance)` (default `stress_tolerance =
+  0.5`, exposed as `req.AncestralStressTolerance`). With defaults
+  (15% × 0.5) → 7.5% penalty reduction; at cap (25% × 0.5) → 12.5%.
+
+The dynamic the issue calls for is captured at the strategy level:
+slower under zero stress (lower baseline), more resilient under
+climate stress (lower effective penalty). Per-individual lineage
+tracking through reproduction is deliberately out of scope (v0.9
+non-goal).
+
+Backend: new `Ancestral*` request fields with validation; new
+`UseAncestralSeed` flag on `strategyConfig`; new `seedAncestralLines`
+helper called from the worker loop right after `applyCrisprSeed`;
+new `climateDiscountForStrategy` helper consulted in
+`aggregateReplicates` and wired into both single-trait and multi-
+trait climate-penalty applications via a new
+`applyClimatePenaltyToMetricsWithDiscount` variant (the legacy
+no-discount call still exists and is bit-identical to v0.7.24).
+
+**Issue 31 — Climate-aware Decision Report section.**
+New `ClimateRobustness` structured block attached to the sweep
+result (only when `axis = climate_scenario` AND ≥ 2 scenarios were
+sampled). Fields: headline, failure modes, alternative-strategy
+advice, conditional ancestral-introgression paragraph, always-
+present honesty caveat. UI: rendered under the verdict in the
+sensitivity panel with the same styling as the verdict pill.
+
+### Tests — 17 new
+
+- `sensitivity_test.go` (6 new): climate-axis acceptance + rejections,
+  bad-mode error message names the mode, max-values cap, baseline
+  favours `normal`, climate-axis-specific stable / fragile note
+  wording, `ClimateValues` round-trip.
+- `ancestral_test.go` (10 new): seed rewrites the last K only and
+  lowers mean allele count, zero-percent no-op, climate-discount
+  off-strategy stays at 1.0, default discount ≈ 0.925, validation
+  rejects intro_percent > 25, strategy appears iff intro_percent > 0,
+  end-to-end climate-discount mechanism verified (ancestral retains
+  more of its no-stress gain than balanced does).
+- `climate_robustness_test.go` (6 new): non-climate axis returns nil,
+  single-scenario returns nil, stable headline uses "stays best",
+  fragile surfaces an alternative, ancestral paragraph is
+  conditional on `req.Base.AncestralIntroPercent > 0`, empty-baseline
+  edge case warns.
+
+Full suite green.
+
+### Issues closed
+
+- `issues-breedos/29-climate-scenario-sweep.md` →
+  `issues-breedos-done/29-climate-scenario-sweep.md.done`.
+- `issues-breedos/30-climate-ancestral-allele-strategy.md` →
+  `issues-breedos-done/30-climate-ancestral-allele-strategy.md.done`.
+- `issues-breedos/31-climate-decision-report-section.md` →
+  `issues-breedos-done/31-climate-decision-report-section.md.done`.
+
+### Non-goals (deferred)
+
+- 2-D sweeps (axis × severity grid) and climate × heritability cross-
+  axis sweeps.
+- Real landrace genotype dataset (synthetic ancestral lines only).
+- Per-genotype heat-tolerance QTL modelling. Honesty caveat surfaced
+  in the Decision Report section in lieu of this.
+
 ## [0.7.27] - 2026-06-27
 
 ### Added — Edit-vs-Cross-vs-Wait classifier (Issue 07)

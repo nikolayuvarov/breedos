@@ -85,6 +85,16 @@ type SimRequest struct {
 	// tables on the same upload are parsed and surfaced but not
 	// (yet) consumed by the engine — see notes in upload.go.
 	Upload string `json:"upload,omitempty"`
+	// v0.7.28 — Issue 30. Ancestral-allele introgression strategy.
+	// AncestralIntroPercent is the % of founder population replaced by
+	// synthetic "ancestral" / landrace lines at gen 0. Default 0 (the
+	// strategy is opt-in via the advanced strategy set). Hard cap 25%
+	// enforced in validateRequest. AncestralStressTolerance is the
+	// fraction of climate penalty borne by ancestral lines (0.5 = half
+	// the modern penalty); when 0 → falls back to the package default
+	// `AncestralStressToleranceDefault` (also 0.5).
+	AncestralIntroPercent    float64 `json:"ancestral_intro_percent,omitempty"`
+	AncestralStressTolerance float64 `json:"ancestral_stress_tolerance,omitempty"`
 }
 
 // v0.7.21 — Issue 18. Single trait's architecture within a multi-trait run.
@@ -255,6 +265,12 @@ type strategyConfig struct {
 	ParentMultiplier  float64
 	UseCrisprSeed     bool
 	ConservativeEdits bool
+	// v0.7.28 — Issue 30. Strategy-level flag for ancestral-allele
+	// introgression. When set, the worker loop calls seedAncestralLines
+	// against the strategy's local population copy at gen 0 (before any
+	// metrics are computed), and aggregateReplicates discounts the
+	// climate penalty by climateDiscountForStrategy.
+	UseAncestralSeed bool
 }
 
 type progressFunc func(percent int, message string)
@@ -684,7 +700,7 @@ func buildNotes(req SimRequest, strategyCount int, baseDiversity float64, datase
 	workers := effectiveWorkerCount(req.WorkerCount, strategyCount*req.Replicates)
 	notes := []string{
 		"This MVP is a decision-layer simulator, not a wet-lab protocol and not a CRISPR guide/off-target design tool.",
-		"BreedOS v0.7.27 ships the edit-vs-cross-vs-wait classifier (Issue 07). Every ranked candidate edit now carries a structured `classification` field with `class` (edit / cross / wait), a machine-readable `reason_code`, a human-readable `reason`, an `introgression_posture`, and a `risk_warning`. Rules use only quantities already in scope (QTL effect, current allele frequency, baseline population diversity); thresholds are centralised in `edit_classifier.go`. EDIT is recommended for large-effect rare alleles (and uses a cautious ≤2% posture when effect > 1.4 and allele is very rare); CROSS is recommended when the favourable allele is already segregating; WAIT covers near-fixation, marginal effect, and bottleneck-risk cases. `decision.edit_decisions` now carries an aggregate {edit_count, cross_count, wait_count, headline} so the demo can render a per-run mix. The legacy `decision` string on each candidate is kept aligned with the new class for backward compatibility. v0.7.26 shipped the minimal upload workflow (Issue 05): new POST /api/upload accepts a multipart bundle of up to four CSVs (genotype required; phenotype / pedigree / edits optional). The genotype CSV — same format as the existing dataset loader (id, marker_1..N with values 0/1/2) — is consumed as the founder population. Optional tables are parsed and surfaced in the import summary but not yet wired into the engine (phenotypes come from the QTL model; pedigree is built by random mating; edits use the existing crispr_edits counter). Uploads are ephemeral: in-memory cache, 1-hour TTL, never persisted. A new SimRequest field `upload` references the upload by id; if both `upload` and `dataset` are set, upload wins. v0.7.25 opens a second direction alongside biological breeding: prompt-organism simulation. A new public `/theory` page documents the promptogenesis framework (prompts as genotypes, LLM+context as developmental environment, responses as phenotypes), with mapping table, glossary (~50 terms), and module roadmap. A new `issues-promptbio/` execution board scopes the six-module sequence (v0.1 Genome Mapper → v0.2 Genome Diff → v0.3 Evolution Loop → v0.4 Ecology Analyzer → v0.5 Immunology → v0.6 Metabolism, deferred) plus the engine-extension foundation (Issue 07, P1). A new `ingest-done/` audit trail folder mirrors the issues-*-done/ convention: raw theory threads land in `ingest/`, get distilled into a topic-named board, and the source files move to `ingest-done/<NN>-<theme>.md.done`. A new `breedos/mvp/promptbio.go` ships the substrate type surface (PromptGenotype, 14-locus taxonomy, mutation kinds, PromptbioSimRequest) with NO runtime behaviour — biological simulation path is bit-identical to v0.7.24. v0.7.24 wired the Climate stress catalog (shipped v0.7.23 as Issue 27 foundation) into the simulator. New `climate` field on `/api/simulate` carries the chosen ClimateScenario; the engine applies a per-stage phenotype penalty calibrated to Khan et al. 2024 (heat_burst_anthesis 0.32, heat_grain_filling 0.46, combined_postflowering 0.59; others scaled to published yield-loss ranges). Penalty is rank-preserving (uniform across the population), so candidate ordering and selection are unchanged — only the recorded gain drops. `Climate = nil` is bit-identical to v0.7.23 behaviour. v0.7.23 shipped five small improvements as one bundle: (A) Climate Issue 27 foundation — 8-mode catalog + types + LookupClimateMode + validation, no simulation impact yet; (B) sensitivity sweep gains a dynamic axis `trait_weight:<name>` that sweeps per-trait selection weights for multi-trait runs (closes Methane pack workflow gap); (C) `/api/version` returns `{version, commit, build_time}` for deploy verification without HTML grep; (D) Reset button next to presets restores the Balanced default and clears multi-trait state; (E) `/datasets` page gains a 'Generated datasets' section listing the `holstein_synthetic` in-memory generator with honesty-layer disclosure and pointers to the real 1000 Bull Genomes data. v0.7.22 shipped the Methane-pack (Issues 22–26) plus Holstein Issue 19 (synthetic dataset). Methane-pack: methane defaults (h² 0.18–0.21, audited correlations −0.26 / −0.43 / +0.35), N-D Pareto with axis-picker, selection-index weight composer (sliders per trait), 'Methane MeI' (favourable) and 'Methane MeP' (unfavourable) preset buttons, plus a multi-trait trade-off paragraph in the Decision Report. Holstein Issue 19 adds a synthetic Holstein-flavoured founder dataset (Beta(0.5, 0.5) MAF) reachable as `dataset = holstein_synthetic`. Issue 21 graphical Pareto overlay deferred — gain units (standardised) cannot be honestly compared to inbreeding cost (kg of milk) on the same axis; the text-only inbreeding-cost note (shipped v0.7.20) remains the authoritative reporting path. v0.7.21 shipped the multi-trait engine (Issue 18, shared infra for Holstein and Methane packs). When req.Traits is set, the new branch runs a parallel simulator that draws correlated per-trait marker effects via Cholesky decomposition of the genetic-correlation matrix, computes per-trait phenotypes, and selects by a weighted standardised index. Backward compatibility: req.Traits unset → existing single-trait path unchanged. v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
+		"BreedOS v0.7.28 completes the Climate-sweeps pack (Issues 29, 30, 31). Issue 29 adds a `climate_scenario` axis to the sensitivity sweep — instead of comma-separated numbers, the operator picks up to 5 {mode, severity} ClimateScenario rows and the sweep runs the simulator once per row, comparing best-feasible strategies across weather years. Verdict text adapts: stable → 'climate-robust within the sampled stress modes', fragile → 'weather-year dependent'. Issue 30 adds an `ancestral_introgression` strategy — opt-in when `ancestral_intro_percent` > 0 (cap 25%); seeds K = round(N × pct/100) synthetic landrace lines at gen 0 with a Bernoulli-biased low-favourable-allele draw (lower base trait mean), and discounts the climate penalty by 1 − pct × (1 − stress_tolerance) (default 0.5) so the strategy reads as 'slower under no stress, more resilient under stress'. Issue 31 adds a plain-language `climate_robustness` Decision Report section attached to multi-scenario climate sweeps — headline, failure-modes, alternative-strategy advice, conditional ancestral-introgression paragraph, and an always-present honesty caveat about the population-uniform penalty assumption. Old single-trait and biology-only paths are bit-identical to v0.7.27 because the new strategy is gated on `AncestralIntroPercent > 0` and the new sweep axis is gated on `axis = climate_scenario`. v0.7.27 shipped the edit-vs-cross-vs-wait classifier (Issue 07). Every ranked candidate edit now carries a structured `classification` field with `class` (edit / cross / wait), a machine-readable `reason_code`, a human-readable `reason`, an `introgression_posture`, and a `risk_warning`. Rules use only quantities already in scope (QTL effect, current allele frequency, baseline population diversity); thresholds are centralised in `edit_classifier.go`. EDIT is recommended for large-effect rare alleles (and uses a cautious ≤2% posture when effect > 1.4 and allele is very rare); CROSS is recommended when the favourable allele is already segregating; WAIT covers near-fixation, marginal effect, and bottleneck-risk cases. `decision.edit_decisions` now carries an aggregate {edit_count, cross_count, wait_count, headline} so the demo can render a per-run mix. The legacy `decision` string on each candidate is kept aligned with the new class for backward compatibility. v0.7.26 shipped the minimal upload workflow (Issue 05): new POST /api/upload accepts a multipart bundle of up to four CSVs (genotype required; phenotype / pedigree / edits optional). The genotype CSV — same format as the existing dataset loader (id, marker_1..N with values 0/1/2) — is consumed as the founder population. Optional tables are parsed and surfaced in the import summary but not yet wired into the engine (phenotypes come from the QTL model; pedigree is built by random mating; edits use the existing crispr_edits counter). Uploads are ephemeral: in-memory cache, 1-hour TTL, never persisted. A new SimRequest field `upload` references the upload by id; if both `upload` and `dataset` are set, upload wins. v0.7.25 opens a second direction alongside biological breeding: prompt-organism simulation. A new public `/theory` page documents the promptogenesis framework (prompts as genotypes, LLM+context as developmental environment, responses as phenotypes), with mapping table, glossary (~50 terms), and module roadmap. A new `issues-promptbio/` execution board scopes the six-module sequence (v0.1 Genome Mapper → v0.2 Genome Diff → v0.3 Evolution Loop → v0.4 Ecology Analyzer → v0.5 Immunology → v0.6 Metabolism, deferred) plus the engine-extension foundation (Issue 07, P1). A new `ingest-done/` audit trail folder mirrors the issues-*-done/ convention: raw theory threads land in `ingest/`, get distilled into a topic-named board, and the source files move to `ingest-done/<NN>-<theme>.md.done`. A new `breedos/mvp/promptbio.go` ships the substrate type surface (PromptGenotype, 14-locus taxonomy, mutation kinds, PromptbioSimRequest) with NO runtime behaviour — biological simulation path is bit-identical to v0.7.24. v0.7.24 wired the Climate stress catalog (shipped v0.7.23 as Issue 27 foundation) into the simulator. New `climate` field on `/api/simulate` carries the chosen ClimateScenario; the engine applies a per-stage phenotype penalty calibrated to Khan et al. 2024 (heat_burst_anthesis 0.32, heat_grain_filling 0.46, combined_postflowering 0.59; others scaled to published yield-loss ranges). Penalty is rank-preserving (uniform across the population), so candidate ordering and selection are unchanged — only the recorded gain drops. `Climate = nil` is bit-identical to v0.7.23 behaviour. v0.7.23 shipped five small improvements as one bundle: (A) Climate Issue 27 foundation — 8-mode catalog + types + LookupClimateMode + validation, no simulation impact yet; (B) sensitivity sweep gains a dynamic axis `trait_weight:<name>` that sweeps per-trait selection weights for multi-trait runs (closes Methane pack workflow gap); (C) `/api/version` returns `{version, commit, build_time}` for deploy verification without HTML grep; (D) Reset button next to presets restores the Balanced default and clears multi-trait state; (E) `/datasets` page gains a 'Generated datasets' section listing the `holstein_synthetic` in-memory generator with honesty-layer disclosure and pointers to the real 1000 Bull Genomes data. v0.7.22 shipped the Methane-pack (Issues 22–26) plus Holstein Issue 19 (synthetic dataset). Methane-pack: methane defaults (h² 0.18–0.21, audited correlations −0.26 / −0.43 / +0.35), N-D Pareto with axis-picker, selection-index weight composer (sliders per trait), 'Methane MeI' (favourable) and 'Methane MeP' (unfavourable) preset buttons, plus a multi-trait trade-off paragraph in the Decision Report. Holstein Issue 19 adds a synthetic Holstein-flavoured founder dataset (Beta(0.5, 0.5) MAF) reachable as `dataset = holstein_synthetic`. Issue 21 graphical Pareto overlay deferred — gain units (standardised) cannot be honestly compared to inbreeding cost (kg of milk) on the same axis; the text-only inbreeding-cost note (shipped v0.7.20) remains the authoritative reporting path. v0.7.21 shipped the multi-trait engine (Issue 18, shared infra for Holstein and Methane packs). When req.Traits is set, the new branch runs a parallel simulator that draws correlated per-trait marker effects via Cholesky decomposition of the genetic-correlation matrix, computes per-trait phenotypes, and selects by a weighted standardised index. Backward compatibility: req.Traits unset → existing single-trait path unchanged. v0.7.20 ships the first three Holstein-pack pieces (Issues 17, 20, 21): a Holstein dairy preset (single-trait milk yield, N=800, gen=8, Ne-relevant defaults), an effective-population-size trajectory chart with FAO reference lines at Ne=100 and Ne=50, and an inbreeding-cost note in the Decision Report (default −45 kg of milk per 1% F, range 20–65 kg/F from the 2026-05-28 literature audit). v0.7.19 closed a correctness gap found when the v0.7.18 NGT-pack was re-audited against the final regulation text (Council adopted 2026-04-21). The classifier distinguishes the Annex I Path (i) edits (SNV / small ≤ 20 nt / inversion / deletion, anywhere in genome) from Path (ii) gene-pool insertions, and requires the operator to confirm that no endogenous gene is disrupted before a Path (ii) edit set can be granted NGT-1 — closing a silent false-positive in the v0.7.18 release. v0.7.18 added the EU NGT regulatory layer; v0.7.17 propagates per-generation progress through the sensitivity sweep; v0.7.16 added the sensitivity sweep itself (Issue 09); v0.7.15 raised the per-run budget cap to 1.5B and added a live budget meter; v0.7.14 enqueues the tracked task first; v0.7.13 snapshot queue + client playback, v0.7.12 datasets registry, v0.7.11 demo shell, v0.7.10 Flexbox layout, v0.7.8 histogram polish, v0.7.6 live histogram baseline, v0.7.5 external real-data deploy are inherited.",
 		"The CRISPR part is intentionally minimal: it shows how candidate edits can be prioritized and injected into strategy simulation without providing laboratory instructions.",
 		fmt.Sprintf("The engine runs %d strategies × %d replicates = %d simulation jobs through a worker pool of %d workers.", strategyCount, req.Replicates, strategyCount*req.Replicates, workers),
 		fmt.Sprintf("Risk thresholds: inbreeding breach ≥ %.2f; diversity collapse means diversity loss ≥ %.2f relative to baseline diversity %.4f.", req.InbreedingLimit, req.DiversityLossLimit, baseDiversity),
@@ -766,6 +782,24 @@ func buildStrategyConfigs(req SimRequest) []strategyConfig {
 	if req.CrisprEnabled && req.CrisprEdits > 0 {
 		strategies = append(strategies, strategyConfig{Name: "Edit-aware introgression planner", Code: "edit_introgression", Summary: "Seeds lower-risk candidate edits, then spreads them through diversity-aware parent choice and diverse mate allocation.", Rule: "ocs", MatingRule: "diverse_pairs", TraitWeight: 0.88, NoveltyWeight: 0.35, SimilarityPenalty: 0.75, ParentMultiplier: 1.90, UseCrisprSeed: true, ConservativeEdits: true})
 	}
+	// v0.7.28 — Issue 30. Ancestral-allele introgression strategy.
+	// Available only when the operator enables the advanced strategy
+	// set AND sets ancestral_intro_percent > 0. Lower trait baseline
+	// (slower under no-stress) traded for reduced climate penalty
+	// (better under stress).
+	if req.AncestralIntroPercent > 0 {
+		strategies = append(strategies, strategyConfig{
+			Name:             "Ancestral introgression",
+			Code:             "ancestral_introgression",
+			Summary:          "Seeds landrace / wild-relative lines into the founder population at generation 0 and runs diversity-aware balanced selection. Ancestral lines carry better climate-stress tolerance but worse mean trait performance.",
+			Rule:             "score",
+			MatingRule:       "diverse_pairs",
+			TraitWeight:      0.80,
+			NoveltyWeight:    0.60,
+			ParentMultiplier: 1.80,
+			UseAncestralSeed: true,
+		})
+	}
 	return strategies
 }
 
@@ -842,6 +876,16 @@ func simulateStrategiesDecisionEngine(req SimRequest, strategies []strategyConfi
 				}
 				if task.Config.UseCrisprSeed {
 					applyCrisprSeed(strategyPop, editSet, req.CrisprIntroPercent, rand.New(rand.NewSource(req.Seed+int64(900000+task.StrategyIndex*1009+task.Replicate*97))))
+				}
+				// v0.7.28 — Issue 30. Ancestral-allele seed at gen 0.
+				// Re-rolls the last K founders with a low-favourable-
+				// allele Bernoulli draw so the base trait mean is lower
+				// (matching the issue's "lower mean trait performance"
+				// premise). Per-strategy seed is independent of the
+				// CRISPR seed so the two can co-exist (a hybrid strategy
+				// could use both — out of scope for v0.9).
+				if task.Config.UseAncestralSeed {
+					seedAncestralLines(strategyPop, req.AncestralIntroPercent, req.Markers, rand.New(rand.NewSource(req.Seed+int64(700000+task.StrategyIndex*1013+task.Replicate*103))))
 				}
 				strategyRNG := rand.New(rand.NewSource(req.Seed + int64(1000+task.StrategyIndex*31337+task.Replicate*7919)))
 				emitSnapshot := snapshot != nil && task.StrategyIndex == trackIdx && task.Replicate == 0
@@ -960,7 +1004,9 @@ func aggregateReplicates(req SimRequest, cfg strategyConfig, reps []StrategyResu
 	// population. Scales TraitMean / GeneticGain on every MetricPoint by
 	// (1 − penalty). No-op when req.Climate == nil (single-trait runs
 	// without climate stress are bit-identical to v0.7.23).
-	applyClimatePenaltyToMetrics(metrics, req.Climate)
+	// v0.7.28 — Issue 30. Per-strategy climate-penalty discount.
+	// Default 1.0 (no discount) reproduces v0.7.24 behaviour.
+	applyClimatePenaltyToMetricsWithDiscount(metrics, req.Climate, climateDiscountForStrategy(cfg, req))
 	gains, divs, inbr := make([]float64, 0, len(reps)), make([]float64, 0, len(reps)), make([]float64, 0, len(reps))
 	rareLossEvents, inbreedingBreaches, diversityCollapses := 0, 0, 0
 	for _, rep := range reps {
@@ -1601,6 +1647,16 @@ func validateRequest(req SimRequest, strategyCount int) error {
 	}
 	if req.CrisprIntroPercent < 0 || req.CrisprIntroPercent > 100 {
 		return errors.New("crispr_intro_percent must be between 0 and 100")
+	}
+	// v0.7.28 — Issue 30. Hard cap on ancestral intro percent. The
+	// cap mirrors the issue's "max 25%" — the model would not be
+	// honest beyond that point because the strategy-level discount is
+	// a population-mean approximation, not per-individual tracking.
+	if req.AncestralIntroPercent < 0 || req.AncestralIntroPercent > AncestralIntroPercentMax {
+		return fmt.Errorf("ancestral_intro_percent must be between 0 and %.0f", AncestralIntroPercentMax)
+	}
+	if req.AncestralStressTolerance < 0 || req.AncestralStressTolerance > 1 {
+		return errors.New("ancestral_stress_tolerance must be between 0 and 1")
 	}
 	if req.StrategySet != "core" && req.StrategySet != "advanced" {
 		return errors.New("strategy_set must be core or advanced")

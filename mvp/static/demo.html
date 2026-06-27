@@ -23,7 +23,7 @@
       <span>Not a wet-lab protocol, not a guide-RNA designer, not a deployable recommendation without your own genotype/phenotype data and domain review. See <em>Model limitations</em> and <em>What could make this recommendation wrong?</em> in the decision report below.</span>
     </div>
     <div class="card" style="margin-bottom:18px">
-      <div class="kicker">MVP v0.7.27 — Edit / Cross / Wait classifier (Issue 07)</div>
+      <div class="kicker">MVP v0.7.28 — Climate pack complete (Issues 29, 30, 31)</div>
       <h1 style="font-size:clamp(36px,5vw,62px); margin-bottom:12px">Selection Strategy Simulator</h1>
       <p class="lede">
         Compare selection strategies as an early decision engine: Monte Carlo replicates, neutral/random baselines, genomic selection mockups, OCS-like constraints, cross planning, Pareto trade-offs, risk probabilities, and minimal CRISPR-aware edit introgression.
@@ -401,12 +401,33 @@
               <option value="selection_percent">Selection intensity (%)</option>
               <option value="generations">Generations horizon</option>
             </select></label>
-            <label class="sens-label sens-values-label">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
+            <label class="sens-label sens-values-label" id="sensValuesLabel">Values (up to 5, comma-separated)<input id="sensValues" type="text" value="0.2, 0.35, 0.5, 0.65, 0.8"></label>
+            <!-- v0.7.28 — Issue 29. Structured climate-scenario picker.
+                 Shown when axis = climate_scenario. Each row is a
+                 {mode, severity} pair; empty mode means "skip this row".
+                 Up to 5 used by the backend (sensitivityMaxValues). -->
+            <div class="sens-label sens-values-label" id="sensClimateValues" hidden style="display:grid; grid-template-columns:auto auto; gap:6px 10px; align-items:center; min-width:280px;">
+              <strong style="grid-column:1/-1; font-size:13px;">Climate scenarios (up to 5)</strong>
+              <select class="sens-climate-mode" data-row="0"><option value="">(skip)</option><option value="normal" selected>normal</option><option value="heat_burst_anthesis">heat_burst_anthesis</option><option value="heat_burst_booting">heat_burst_booting</option><option value="heat_grain_filling">heat_grain_filling</option><option value="combined_postflowering">combined_postflowering</option><option value="prolonged_heat">prolonged_heat</option><option value="drought_terminal">drought_terminal</option><option value="salinity_chronic">salinity_chronic</option></select>
+              <input class="sens-climate-sev" data-row="0" type="number" min="0" max="1" step="0.1" value="0">
+              <select class="sens-climate-mode" data-row="1"><option value="">(skip)</option><option value="normal">normal</option><option value="heat_burst_anthesis" selected>heat_burst_anthesis</option><option value="heat_burst_booting">heat_burst_booting</option><option value="heat_grain_filling">heat_grain_filling</option><option value="combined_postflowering">combined_postflowering</option><option value="prolonged_heat">prolonged_heat</option><option value="drought_terminal">drought_terminal</option><option value="salinity_chronic">salinity_chronic</option></select>
+              <input class="sens-climate-sev" data-row="1" type="number" min="0" max="1" step="0.1" value="0.5">
+              <select class="sens-climate-mode" data-row="2"><option value="">(skip)</option><option value="normal">normal</option><option value="heat_burst_anthesis" selected>heat_burst_anthesis</option><option value="heat_burst_booting">heat_burst_booting</option><option value="heat_grain_filling">heat_grain_filling</option><option value="combined_postflowering">combined_postflowering</option><option value="prolonged_heat">prolonged_heat</option><option value="drought_terminal">drought_terminal</option><option value="salinity_chronic">salinity_chronic</option></select>
+              <input class="sens-climate-sev" data-row="2" type="number" min="0" max="1" step="0.1" value="1.0">
+              <select class="sens-climate-mode" data-row="3"><option value="">(skip)</option><option value="normal">normal</option><option value="heat_burst_anthesis">heat_burst_anthesis</option><option value="heat_burst_booting">heat_burst_booting</option><option value="heat_grain_filling">heat_grain_filling</option><option value="combined_postflowering">combined_postflowering</option><option value="prolonged_heat">prolonged_heat</option><option value="drought_terminal" selected>drought_terminal</option><option value="salinity_chronic">salinity_chronic</option></select>
+              <input class="sens-climate-sev" data-row="3" type="number" min="0" max="1" step="0.1" value="0.7">
+              <select class="sens-climate-mode" data-row="4"><option value="">(skip)</option><option value="normal">normal</option><option value="heat_burst_anthesis">heat_burst_anthesis</option><option value="heat_burst_booting">heat_burst_booting</option><option value="heat_grain_filling">heat_grain_filling</option><option value="combined_postflowering">combined_postflowering</option><option value="prolonged_heat">prolonged_heat</option><option value="drought_terminal">drought_terminal</option><option value="salinity_chronic" selected>salinity_chronic</option></select>
+              <input class="sens-climate-sev" data-row="4" type="number" min="0" max="1" step="0.1" value="0.6">
+            </div>
             <button id="sensRunBtn" class="btn primary" type="button">Run sweep</button>
           </div>
           <div id="sensBudget" class="budget-meter"></div>
           <div id="sensStatus" class="status"></div>
           <div id="sensVerdict" class="sens-verdict" hidden></div>
+          <!-- v0.7.28 — Issue 31. Climate-robustness Decision Report
+               section. Rendered only when the sweep used the
+               climate_scenario axis and produced ≥ 2 scenarios. -->
+          <div id="sensClimateRobustness" class="sens-verdict" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>
           <div id="sensTableWrap" class="table-wrap" hidden>
             <table>
               <thead><tr>
@@ -496,7 +517,7 @@
             This is intentionally not guide design. It is a minimal decision-layer demonstration: which beneficial low-frequency loci might be worth seeding into a breeding strategy simulation.
           </p>
           <div id="ngtRegulatoryCard" class="ngt-regulatory-card" hidden></div>
-          <!-- v0.7.27 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
+          <!-- v0.7.28 — Issue 07. Edit-vs-cross-vs-wait headline + counts.
                Rendered from decision.edit_decisions; populated whenever the
                run ranked any candidate edits. -->
           <div id="editDecisionsCard" class="ngt-regulatory-card" hidden style="border-color:var(--accent2); background:rgba(140,183,255,0.05);"></div>

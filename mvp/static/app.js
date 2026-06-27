@@ -66,7 +66,7 @@ function numberValue(id) {
   return Number.isFinite(v) ? v : 0;
 }
 
-// v0.7.27 — Issue 05. Holds the in-memory upload id returned by /api/upload.
+// v0.7.28 — Issue 05. Holds the in-memory upload id returned by /api/upload.
 // Cleared when the user picks a non-upload dataset.
 let uploadState = {id: null, summary: null};
 
@@ -562,7 +562,7 @@ function renderAll(data, prev) {
   // v0.7.18 — pass set-level NGT classification to both renderers.
   const ngt = (data.decision && data.decision.ngt) || null;
   renderNGTRegulatoryCard(ngt, data.request);
-  // v0.7.27 — Issue 07. Render the edit-vs-cross-vs-wait headline card
+  // v0.7.28 — Issue 07. Render the edit-vs-cross-vs-wait headline card
   // above the candidate-edit table from decision.edit_decisions.
   renderEditDecisionsCard((data.decision && data.decision.edit_decisions) || null);
   renderEditTable(data.candidate_edits || [], ngt);
@@ -693,7 +693,30 @@ function renderEditTable(edits, ngt) {
   `).join('');
 }
 
-// v0.7.27 — Issue 07. Renders the headline card above the candidate-
+// v0.7.28 — Issue 31. Renders the climate-robustness Decision Report
+// section under the sweep verdict. Pulls from sweep result's
+// climate_robustness field; hidden when nil (non-climate axis or
+// single-scenario sweep).
+function renderClimateRobustnessSection(cr) {
+  const el = byId('sensClimateRobustness');
+  if (!el) return;
+  if (!cr) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  const parts = [];
+  parts.push('<h3 style="margin:0 0 8px; color:var(--accent2);">Climate robustness</h3>');
+  if (cr.headline)           parts.push('<p style="margin:0 0 8px;">' + escapeHtml(cr.headline) + '</p>');
+  if (cr.failure_modes)      parts.push('<p style="margin:0 0 8px;">' + escapeHtml(cr.failure_modes) + '</p>');
+  if (cr.alternative_advice) parts.push('<p style="margin:0 0 8px;">' + escapeHtml(cr.alternative_advice) + '</p>');
+  if (cr.ancestral_advice)   parts.push('<p style="margin:0 0 8px; padding:8px 10px; border-left:3px solid var(--accent); background:rgba(143,255,209,0.06);">' + escapeHtml(cr.ancestral_advice) + '</p>');
+  if (cr.honesty_caveat)     parts.push('<p style="margin:8px 0 0; padding:8px 10px; border-left:3px solid var(--muted); background:rgba(0,0,0,0.18); font-size:12px; color:var(--muted);">⚠ ' + escapeHtml(cr.honesty_caveat) + '</p>');
+  el.innerHTML = parts.join('');
+  el.hidden = false;
+}
+
+// v0.7.28 — Issue 07. Renders the headline card above the candidate-
 // edit table. Hidden when no edits were ranked.
 function renderEditDecisionsCard(summary) {
   const el = byId('editDecisionsCard');
@@ -717,7 +740,7 @@ function renderEditDecisionsCard(summary) {
   el.hidden = false;
 }
 
-// v0.7.27 — Issue 07. Colour-coded edit-vs-cross-vs-wait badge with
+// v0.7.28 — Issue 07. Colour-coded edit-vs-cross-vs-wait badge with
 // the full reason / posture / risk tooltip. Pairs with the CSS classes
 // .edit-class-badge.{edit,cross,wait,unknown}.
 function editClassBadgeHtml(c) {
@@ -1596,7 +1619,9 @@ function refreshSensAxisOptions() {
   const opts = [
     {key: 'heritability',      label: 'Heritability (h²)'},
     {key: 'selection_percent', label: 'Selection intensity (%)'},
-    {key: 'generations',       label: 'Generations horizon'}
+    {key: 'generations',       label: 'Generations horizon'},
+    // v0.7.28 — Issue 29. Structured climate-scenario axis.
+    {key: 'climate_scenario',  label: 'Climate scenario (mode × severity)'}
   ];
   const traits = multiTraitState.traits || [];
   traits.forEach(t => {
@@ -1623,6 +1648,34 @@ function parseSensValues(text) {
     .filter(v => Number.isFinite(v));
 }
 
+// v0.7.28 — Issue 29. Toggle between the comma-separated numeric values
+// input and the structured climate-scenario picker, based on axis.
+function syncSensValuesUI(axis) {
+  const numericLabel = byId('sensValuesLabel');
+  const climateBlock = byId('sensClimateValues');
+  const isClimate = axis === 'climate_scenario';
+  if (numericLabel) numericLabel.hidden = isClimate;
+  if (climateBlock) climateBlock.hidden = !isClimate;
+}
+
+// v0.7.28 — Issue 29. Read the structured climate rows. Returns a list
+// of {mode, severity} for rows where mode is non-empty.
+function gatherSensClimateValues() {
+  const modes = document.querySelectorAll('#sensClimateValues .sens-climate-mode');
+  const sevs = document.querySelectorAll('#sensClimateValues .sens-climate-sev');
+  const out = [];
+  for (let i = 0; i < modes.length; i++) {
+    const mode = String(modes[i].value || '').trim();
+    if (!mode) continue;
+    let sev = Number(sevs[i] ? sevs[i].value : 0);
+    if (!Number.isFinite(sev)) sev = 0;
+    if (sev < 0) sev = 0;
+    if (sev > 1) sev = 1;
+    out.push({mode, severity: sev});
+  }
+  return out;
+}
+
 function sensitivityCostCells(req, values) {
   const single = runBudgetCells(req);
   return single * Math.max(1, values.length);
@@ -1632,7 +1685,17 @@ function updateSensBudgetMeter() {
   const el = byId('sensBudget');
   if (!el) return { over: false };
   const axis = byId('sensAxis') ? byId('sensAxis').value : 'heritability';
-  const values = parseSensValues(byId('sensValues') ? byId('sensValues').value : '');
+  syncSensValuesUI(axis);
+  // v0.7.28 — Issue 29. Cardinality comes from either the numeric values
+  // input or the structured climate-scenario rows, depending on axis.
+  let values;
+  let climateValues = null;
+  if (axis === 'climate_scenario') {
+    climateValues = gatherSensClimateValues();
+    values = new Array(climateValues.length); // budget meter only cares about length.
+  } else {
+    values = parseSensValues(byId('sensValues') ? byId('sensValues').value : '');
+  }
   const req = requestFromForm();
   const sweep = sensitivityCostCells(req, values);
   const over = sweep > BUDGET_CAP;
@@ -1660,7 +1723,7 @@ function updateSensBudgetMeter() {
     if (over || values.length === 0 || values.length > 5 || sensRunInFlight) btn.setAttribute('disabled', 'disabled');
     else btn.removeAttribute('disabled');
   }
-  return { over, values };
+  return { over, values, climateValues };
 }
 
 function setSensStatus(text, cls) {
@@ -1691,10 +1754,18 @@ async function runSensitivitySweep() {
   byId('sensTableWrap').hidden = true;
   setSensStatus('Starting sweep...', '');
   try {
+    // v0.7.28 — Issue 29. Send climate_values + axis=climate_scenario
+    // when picked; otherwise the legacy numeric path.
+    const body = {base: requestFromForm(), axis: axis};
+    if (axis === 'climate_scenario') {
+      body.climate_values = meter.climateValues || [];
+    } else {
+      body.values = meter.values;
+    }
     const startRes = await fetch('/api/sensitivity/start', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({base: requestFromForm(), axis: axis, values: meter.values})
+      body: JSON.stringify(body)
     });
     if (!startRes.ok) {
       const text = await startRes.text();
@@ -1745,6 +1816,8 @@ function renderSensResult(axis, result) {
   const notes = Array.isArray(summary.notes) ? summary.notes.join(' ') : '';
   verdictEl.innerHTML = `<strong>${verdictLabel}</strong> — ${escapeHtml(notes)}`;
   verdictEl.hidden = false;
+  // v0.7.28 — Issue 31. Climate-robustness Decision Report section.
+  renderClimateRobustnessSection(result.climate_robustness);
   const fmt = SENS_AXIS_FORMAT[axis] || (v => String(v));
   const rows = (result.scenarios || []).map(s => {
     const matchCell = s.best_feasible_code === ''
@@ -1752,8 +1825,11 @@ function renderSensResult(axis, result) {
       : (s.baseline_match
           ? '<span class="sens-match-yes">yes</span>'
           : `<span class="sens-match-no">no (→ ${escapeHtml(s.best_feasible_code)})</span>`);
+    // v0.7.28 — Issue 29. Prefer the server-supplied human label
+    // when present (climate_scenario axis); fall back to numeric.
+    const axisCell = s.axis_label ? escapeHtml(s.axis_label) : fmt(Number(s.axis_value));
     return '<tr>'
-      + `<td>${fmt(Number(s.axis_value))}</td>`
+      + `<td>${axisCell}</td>`
       + `<td>${escapeHtml(s.best_feasible_name || s.best_feasible_code || '—')}</td>`
       + `<td>${signedDelta(s.genetic_gain)}</td>`
       + `<td>${Number(s.diversity).toFixed(3)}</td>`
@@ -1812,14 +1888,25 @@ window.addEventListener('DOMContentLoaded', () => {
   const sensRunBtn = byId('sensRunBtn');
   if (sensAxis && sensValues && sensRunBtn) {
     sensAxis.addEventListener('change', () => {
-      sensValues.value = SENS_DEFAULT_VALUES[sensAxis.value] || '';
+      // v0.7.28 — Issue 29. Don't overwrite the numeric values input
+      // when switching to the climate axis; just toggle UI visibility.
+      if (sensAxis.value !== 'climate_scenario') {
+        sensValues.value = SENS_DEFAULT_VALUES[sensAxis.value] || '';
+      }
       updateSensBudgetMeter();
+    });
+    // v0.7.28 — Issue 29. The climate rows live outside `input, select`
+    // listeners attached at init because they're inside #sensClimateValues
+    // and don't carry stable ids; wire them explicitly.
+    document.querySelectorAll('#sensClimateValues .sens-climate-mode, #sensClimateValues .sens-climate-sev').forEach(el => {
+      el.addEventListener('change', updateSensBudgetMeter);
+      el.addEventListener('input', updateSensBudgetMeter);
     });
     sensValues.addEventListener('input', updateSensBudgetMeter);
     sensRunBtn.addEventListener('click', runSensitivitySweep);
     updateSensBudgetMeter();
   }
-  // v0.7.27 — Issue 05. Upload UI: show/hide the upload card, handle the
+  // v0.7.28 — Issue 05. Upload UI: show/hide the upload card, handle the
   // multipart POST, render the import summary.
   setupUploadUI();
   setStatus('Ready. Press Run simulation to calculate.', '');

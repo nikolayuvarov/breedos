@@ -232,11 +232,28 @@ func ApplyClimatePenalty(phenotype float64, scenario *ClimateScenario) float64 {
 // Uniform-across-population assumption: penalty preserves rank, so selection
 // is unaffected; only recorded mean / gain trajectories drop.
 func applyClimatePenaltyToMetrics(metrics []MetricPoint, scenario *ClimateScenario) {
+	applyClimatePenaltyToMetricsWithDiscount(metrics, scenario, 1.0)
+}
+
+// v0.7.28 — Issue 30. Variant that scales the climate penalty by a
+// per-strategy discount before applying it. discount = 1.0 (default)
+// reproduces the v0.7.24 behaviour bit-for-bit; discount < 1 reduces
+// the penalty (used for ancestral_introgression, which the issue
+// models as "ancestral lines suffer half the penalty"). discount
+// clamped to [0, 1] defensively.
+func applyClimatePenaltyToMetricsWithDiscount(metrics []MetricPoint, scenario *ClimateScenario, discount float64) {
 	p := climatePenaltyFor(scenario)
 	if p == 0 {
 		return
 	}
-	factor := 1 - p
+	if discount < 0 {
+		discount = 0
+	}
+	if discount > 1 {
+		discount = 1
+	}
+	effective := p * discount
+	factor := 1 - effective
 	for i := range metrics {
 		metrics[i].TraitMean = round4(metrics[i].TraitMean * factor)
 		metrics[i].GeneticGain = round4(metrics[i].GeneticGain * factor)

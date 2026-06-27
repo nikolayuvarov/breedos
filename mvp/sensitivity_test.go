@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -153,6 +154,134 @@ func TestAssembleSensitivityResultInconclusiveWhenAllInfeasible(t *testing.T) {
 	result := assembleSensitivityResult(req, scenarios)
 	if result.Summary.Verdict != "inconclusive" {
 		t.Errorf("expected 'inconclusive' verdict, got %q", result.Summary.Verdict)
+	}
+}
+
+// v0.7.28 — Issue 29. Climate-scenario axis tests.
+
+func TestValidateSensitivityClimateAxisRejectsEmptyClimateValues(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+	}
+	if err := validateSensitivityRequest(req); err == nil {
+		t.Fatal("expected error for empty climate_values, got nil")
+	}
+}
+
+func TestValidateSensitivityClimateAxisRejectsBadMode(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "normal", Severity: 0},
+			{Mode: "does_not_exist", Severity: 0.5},
+		},
+	}
+	err := validateSensitivityRequest(req)
+	if err == nil {
+		t.Fatal("expected error for unknown mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "does_not_exist") {
+		t.Errorf("expected error to name the bad mode, got %v", err)
+	}
+}
+
+func TestValidateSensitivityClimateAxisEnforcesMaxValues(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "normal", Severity: 0},
+			{Mode: "heat_burst_anthesis", Severity: 0.5},
+			{Mode: "heat_burst_anthesis", Severity: 1.0},
+			{Mode: "drought_terminal", Severity: 0.7},
+			{Mode: "salinity_chronic", Severity: 0.6},
+			{Mode: "prolonged_heat", Severity: 0.3},
+		},
+	}
+	if err := validateSensitivityRequest(req); err == nil {
+		t.Fatalf("expected error for >%d climate values, got nil", sensitivityMaxValues)
+	}
+}
+
+func TestValidateSensitivityClimateAxisAcceptsModestSweep(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "normal", Severity: 0},
+			{Mode: "heat_burst_anthesis", Severity: 1.0},
+			{Mode: "drought_terminal", Severity: 0.7},
+		},
+	}
+	if err := validateSensitivityRequest(req); err != nil {
+		t.Fatalf("modest climate sweep should pass validation, got %v", err)
+	}
+}
+
+func TestClimateAxisBaselineFavoursNormalMode(t *testing.T) {
+	// Issue 29: baseline picker prefers the "normal" scenario when present.
+	req := SensitivityRequest{
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "heat_burst_anthesis", Severity: 1.0},
+			{Mode: "normal", Severity: 0},
+			{Mode: "drought_terminal", Severity: 0.7},
+		},
+	}
+	got := baselineValueForAxis(req)
+	if got != 1.0 {
+		t.Errorf("expected baseline index = 1 (normal at index 1), got %v", got)
+	}
+}
+
+func TestAssembleSensitivityResultClimateStableVerdict(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "normal", Severity: 0},
+			{Mode: "heat_burst_anthesis", Severity: 1.0},
+			{Mode: "drought_terminal", Severity: 0.7},
+		},
+	}
+	scenarios := []SensitivityScenario{
+		{AxisValue: 0, AxisLabel: "normal (sev 0.00)", BestFeasibleCode: "balanced", BestFeasibleName: "Balanced"},
+		{AxisValue: 1, AxisLabel: "heat_burst_anthesis (sev 1.00)", BestFeasibleCode: "balanced", BestFeasibleName: "Balanced"},
+		{AxisValue: 2, AxisLabel: "drought_terminal (sev 0.70)", BestFeasibleCode: "balanced", BestFeasibleName: "Balanced"},
+	}
+	result := assembleSensitivityResult(req, scenarios)
+	if result.Summary.Verdict != "stable" {
+		t.Errorf("expected stable verdict, got %q", result.Summary.Verdict)
+	}
+	if !strings.Contains(strings.Join(result.Summary.Notes, " "), "climate-robust") {
+		t.Errorf("expected climate-axis-specific 'climate-robust' phrasing in notes, got %v", result.Summary.Notes)
+	}
+	if len(result.ClimateValues) != len(req.ClimateValues) {
+		t.Errorf("ClimateValues should round-trip through the result, got len=%d want=%d", len(result.ClimateValues), len(req.ClimateValues))
+	}
+}
+
+func TestAssembleSensitivityResultClimateFragileVerdict(t *testing.T) {
+	req := SensitivityRequest{
+		Base: baseSimRequestForSens(),
+		Axis: axisClimateScenario,
+		ClimateValues: []ClimateScenario{
+			{Mode: "normal", Severity: 0},
+			{Mode: "heat_burst_anthesis", Severity: 1.0},
+		},
+	}
+	scenarios := []SensitivityScenario{
+		{AxisValue: 0, AxisLabel: "normal (sev 0.00)", BestFeasibleCode: "balanced", BestFeasibleName: "Balanced"},
+		{AxisValue: 1, AxisLabel: "heat_burst_anthesis (sev 1.00)", BestFeasibleCode: "diversity", BestFeasibleName: "Diversity"},
+	}
+	result := assembleSensitivityResult(req, scenarios)
+	if result.Summary.Verdict != "fragile" {
+		t.Errorf("expected fragile verdict, got %q", result.Summary.Verdict)
+	}
+	if !strings.Contains(strings.Join(result.Summary.Notes, " "), "weather-year dependent") {
+		t.Errorf("expected climate-axis-specific 'weather-year dependent' phrasing, got %v", result.Summary.Notes)
 	}
 }
 
