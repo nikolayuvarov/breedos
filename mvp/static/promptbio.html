@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology + v1.3 Eval Lab</title>
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology + v1.3 Eval Lab + v3.0 Organism Builder</title>
   <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
@@ -488,10 +488,113 @@ Output the launch strategy.</textarea>
         <ol id="elMutations" style="margin:0 0 0 20px;"></ol>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid #0ea5e9;">
+      <div class="kicker">Promptbio v3.0 — Unified Prompt Organism Architecture · v0.7.37 (Issue 33)</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Design the whole organism. One spec, sixteen organs.</h2>
+      <p class="lede">
+        v3.0 is the architecture spine: 16 organs (Genome / Constitutional / Context / Epistemic / Metabolic / Immune / Decision / Planning / Runtime / Memory / Tool / Observability / Evaluation / Governance / Reproductive / Autopoietic), 7 information flows, 6 control loops, 10 architectural principles. Pick the inputs; get a <code>prompt_organism</code> spec, the anatomy diagram, the §14 8-step minimum-viable template, the §23 16-step production path, the top risks, and a validation report against all 10 principles.
+      </p>
+      <p class="note">
+        <code>Agent = PromptOrganism + ActionLoop + Tools + Permissions</code>. The validator classifies your spec as <code>workflow</code> / <code>organism</code> / <code>agent</code> / <code>agent_incomplete</code> / <code>model_reference_only</code>.
+      </p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;">
+        <label style="font-size:13px;">Use case
+          <input id="orgUseCase" type="text" value="GTM Product Launch Strategy for a B2B SaaS targeting mid-market HR teams">
+        </label>
+        <label style="font-size:13px;">Target phenotype
+          <input id="orgPhenotype" type="text" value="structured launch strategy: segment, channels, experiments, metrics, risks">
+        </label>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px; margin-top:10px;">
+        <label style="font-size:13px;">Deployment
+          <select id="orgDeployment">
+            <option>single-turn</option>
+            <option selected>multi-turn</option>
+            <option>agent</option>
+            <option>product</option>
+            <option>API</option>
+            <option>internal</option>
+          </select>
+        </label>
+        <label style="font-size:13px;">Risk
+          <select id="orgRisk">
+            <option>low</option>
+            <option selected>medium</option>
+            <option>high</option>
+          </select>
+        </label>
+        <label style="font-size:13px;">Tools
+          <select id="orgTools">
+            <option>none</option>
+            <option selected>read-only</option>
+            <option>write</option>
+            <option>external_actions</option>
+          </select>
+        </label>
+        <label style="font-size:13px;">Memory
+          <select id="orgMemory">
+            <option>disabled</option>
+            <option selected>session</option>
+            <option>project</option>
+            <option>long-term</option>
+          </select>
+        </label>
+        <label style="font-size:13px;">Quality
+          <select id="orgQuality">
+            <option>draft</option>
+            <option>reliable</option>
+            <option selected>production</option>
+            <option>high-assurance</option>
+          </select>
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="orgBuildBtn" class="btn primary" type="button">Build organism</button>
+        <span id="orgStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="orgResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Validation verdict</h2>
+        <p style="margin:6px 0;"><strong id="orgVerdictBadge" style="padding:4px 10px; border-radius:4px; color:white;">verdict</strong> &nbsp; <span id="orgSizeBadge" style="padding:4px 10px; border-radius:4px; background:#1f2937; color:white; font-size:12px;">size</span></p>
+        <p id="orgPrincipleViolations" style="margin:6px 0; font-size:13px;"></p>
+        <p id="orgMissingOrgans" style="margin:6px 0; font-size:13px;"></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Anatomy diagram</h2>
+        <pre id="orgDiagram" style="background:#0b0f14; color:#cdd6f4; padding:12px; border-radius:6px; font-size:11px; line-height:1.3; overflow-x:auto;"></pre>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">4-column anatomy view</h2>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap:10px;">
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:#0ea5e9;">Identity</h3><ul id="orgCol1" style="margin:0 0 0 18px; font-size:12px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:#0ea5e9;">Genome &amp; Runtime</h3><ul id="orgCol2" style="margin:0 0 0 18px; font-size:12px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:#0ea5e9;">Belief &amp; Decision</h3><ul id="orgCol3" style="margin:0 0 0 18px; font-size:12px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:#0ea5e9;">Observability &amp; Evolution</h3><ul id="orgCol4" style="margin:0 0 0 18px; font-size:12px;"></ul></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Top risks</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Failure mode</th><th>Repair</th></tr></thead>
+          <tbody id="orgTopRisks"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <details><summary style="cursor:pointer; font-weight:bold;">§14 Minimum Viable Organism (8 steps)</summary><ol id="orgMVO" style="margin:8px 0 0 20px;"></ol></details>
+        <details style="margin-top:10px;"><summary style="cursor:pointer; font-weight:bold;">§23 Full Production Path (16 steps)</summary><ol id="orgProd" style="margin:8px 0 0 20px;"></ol></details>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.36 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS + v1.3 Eval Lab. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.37 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS + v1.3 Eval Lab + v3.0 Unified Prompt Organism Architecture. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -1119,6 +1222,102 @@ Output the launch strategy.</textarea>
       }
 
       document.getElementById('elRunBtn').addEventListener('click', runEvalLab);
+
+      const orgVerdictColors = {
+        organism: '#16a34a',
+        agent: '#16a34a',
+        agent_incomplete: '#d97706',
+        workflow: '#c0392b',
+        model_reference_only: '#c0392b'
+      };
+
+      async function runOrgBuild() {
+        document.getElementById('orgStatus').textContent = 'building organism…';
+        try {
+          const res = await fetch('/api/promptbio/organism/build', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              use_case: document.getElementById('orgUseCase').value,
+              target_phenotype: document.getElementById('orgPhenotype').value,
+              deployment: document.getElementById('orgDeployment').value,
+              risk_level: document.getElementById('orgRisk').value,
+              data_sources: ['user_input', 'docs'],
+              tools: document.getElementById('orgTools').value,
+              memory: document.getElementById('orgMemory').value,
+              quality_requirements: document.getElementById('orgQuality').value,
+              constraints: {}
+            })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const r = await res.json();
+          renderOrgBuild(r);
+          document.getElementById('orgStatus').textContent = 'done — ' + r.validation_report.classification_verdict + ' · ' + r.spec.prompt_organism.organism_type;
+        } catch (e) {
+          document.getElementById('orgStatus').textContent = 'error: ' + e.message;
+        }
+      }
+
+      function renderOrgBuild(r) {
+        document.getElementById('orgResultCard').hidden = false;
+        const verdict = r.validation_report.classification_verdict;
+        const b = document.getElementById('orgVerdictBadge');
+        b.textContent = verdict;
+        b.style.background = orgVerdictColors[verdict] || '#6b7280';
+        document.getElementById('orgSizeBadge').textContent = r.spec.prompt_organism.organism_type + ' / species: ' + r.spec.prompt_organism.species;
+        const pv = r.validation_report.principle_violations || [];
+        document.getElementById('orgPrincipleViolations').innerHTML = pv.length
+          ? '<strong style="color:var(--err, #c0392b);">' + pv.length + ' principle violations:</strong> ' + pv.map(v => v.principle_name).join(', ')
+          : '<span style="color:var(--ok, #16a34a);">✓ all 10 principles hold</span>';
+        const mo = r.validation_report.missing_organs || [];
+        document.getElementById('orgMissingOrgans').innerHTML = mo.length
+          ? '<strong style="color:var(--warn, #d97706);">missing organs for size ' + r.spec.prompt_organism.organism_type + ':</strong> ' + mo.join(', ')
+          : '<span style="color:var(--muted);">all required organs materialised</span>';
+
+        document.getElementById('orgDiagram').textContent = r.organism_diagram || '';
+
+        const col1 = document.getElementById('orgCol1');
+        col1.innerHTML = '';
+        ['id: ' + r.spec.prompt_organism.id, 'name: ' + r.spec.prompt_organism.name, 'species: ' + r.spec.prompt_organism.species, 'values: ' + (r.spec.values.primary || []).join(', '), 'constitution.immutable: ' + (r.spec.constitution.immutable || []).length + ' rules'].forEach(s => {
+          const li = document.createElement('li'); li.textContent = s; col1.appendChild(li);
+        });
+
+        const col2 = document.getElementById('orgCol2');
+        col2.innerHTML = '';
+        ['genome.spec: ' + (r.spec.genome.spec || '').slice(0, 50) + '…', 'core_genes: ' + (r.spec.genome.core_genes || []).length, 'profiles: ' + (r.spec.expression_profiles || []).join(', '), 'runtime.profile: ' + r.spec.runtime.default_profile, 'tools: ' + (r.spec.runtime.tools || []).join(', ')].forEach(s => {
+          const li = document.createElement('li'); li.textContent = s; col2.appendChild(li);
+        });
+
+        const col3 = document.getElementById('orgCol3');
+        col3.innerHTML = '';
+        ['epistemology: ' + ((r.spec.epistemology.claim_types || []).length) + ' claim types', 'decision: ' + (r.spec.decision.policy || '').slice(0, 40) + '…', 'planning.stop: ' + (r.spec.planning.stop_conditions_required || false), 'metabolism.digest: ' + (r.spec.metabolism.digest_context_before_answer || false), 'immunity.injection: ' + (r.spec.immunity.prompt_injection_boundary || false)].forEach(s => {
+          const li = document.createElement('li'); li.textContent = s; col3.appendChild(li);
+        });
+
+        const col4 = document.getElementById('orgCol4');
+        col4.innerHTML = '';
+        ['observability.trace: ' + r.spec.observability.trace_level, 'metrics: ' + (r.spec.observability.metrics || []).length, 'governance.risk_tier: ' + r.spec.governance.risk_tier, 'autopoiesis: ' + r.spec.autopoiesis.level, 'lifecycle.review: ' + r.spec.lifecycle.review_cadence].forEach(s => {
+          const li = document.createElement('li'); li.textContent = s; col4.appendChild(li);
+        });
+
+        const tr = document.getElementById('orgTopRisks');
+        tr.innerHTML = '';
+        (r.top_risks || []).forEach(risk => {
+          const row = document.createElement('tr');
+          row.innerHTML = '<td>' + escapeHtml(risk.failure_mode) + '</td><td>' + escapeHtml(risk.repair) + '</td>';
+          tr.appendChild(row);
+        });
+
+        const mvo = document.getElementById('orgMVO');
+        mvo.innerHTML = '';
+        (r.minimum_viable_version || []).forEach(s => { const li = document.createElement('li'); li.textContent = s; mvo.appendChild(li); });
+
+        const prod = document.getElementById('orgProd');
+        prod.innerHTML = '';
+        (r.full_production_path || []).forEach(s => { const li = document.createElement('li'); li.textContent = s; prod.appendChild(li); });
+      }
+
+      document.getElementById('orgBuildBtn').addEventListener('click', runOrgBuild);
     });
   </script>
 </body>

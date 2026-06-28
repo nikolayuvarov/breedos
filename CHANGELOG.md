@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.37] - 2026-06-29
+
+### Added — Issue 33 Promptbio v3.0 Unified Prompt Organism Architecture
+
+The architecture spine that wires every prior promptbio module into
+one canonical anatomy. Closes `issues-promptbio/33-unified-prompt-organism-architecture.md`.
+
+**Four catalogues land verbatim:**
+
+- **16 organs (§5):** `genome / constitutional / context / epistemic /
+  metabolic / immune / decision / planning / runtime / memory / tool /
+  observability / evaluation / governance / reproductive / autopoietic`.
+  Each with state / function / failure_modes / wired_to_module.
+- **7 information flows (§6):** `input → epistemic → decision → planning
+  → output → feedback → reproductive`. Each with ordered organ-stage
+  hops and per-flow failure mode.
+- **6 control loops (§13):** `homeostatic / epistemic / agentic /
+  evaluation / governance / autopoietic`. Each with target invariant +
+  step list + organ set + failure mode.
+- **10 architectural principles (§20):** `spec_before_prompt /
+  belief_before_recommendation / decision_before_action /
+  plan_before_agent_loop / constitution_above_optimization /
+  observability_before_autopoiesis / governance_before_production_evolution /
+  deprecation_is_part_of_life / resource_proportionality /
+  stable_core_adaptive_periphery`. Each enforced as a build-time check.
+
+**Size router (§11).** 3 organism sizes (`micro / meso / macro`) each
+with a required-organ gate. The router picks size from the input
+envelope (deployment / risk / tools / memory / quality).
+
+**PromptOrganismSpec (§15).** Full 17-block YAML schema: identity /
+values / constitution / genome / expression_profiles / runtime /
+epistemology / decision / planning / metabolism / immunity /
+homeostasis / evaluation / observability / governance / autopoiesis /
+lifecycle. Round-trips through JSON cleanly.
+
+**Builder (§21).** `Build(req BuildRequest) BuildResponse` is the
+entry point. Returns:
+
+- the full `PromptOrganismSpec`
+- the §12 anatomy diagram (organs rendered as `[●]` if materialised, `[ ]` if declared-but-empty)
+- the organ_map wiring each of the 16 organs to a BreedOS module reference
+- the 7 information flows + 6 control loops
+- the §14 verbatim 8-step minimum-viable template parameterised to the input
+- the §23 verbatim 16-step full-production path
+- top_risks: 5 failure_mode + repair pairs scoped to the spec
+- validation_report from the 10 §20 principle checks + §17/18/19 classification
+
+**Validation (§17/18/19).** Five classification verdicts:
+
+- `organism` — proper organism with values + constitution + belief state + control loops
+- `agent` — organism + write-capable tools + action loop + permissions
+- `agent_incomplete` — write tools registered but missing action loop or permission policy (§18 formula incomplete)
+- `workflow` — has organs but no values / constitution / belief state / homeostatic loops (§17)
+- `model_reference_only` — empty spec / runtime / genome (§19)
+
+The §18 agent formula `Agent = PromptOrganism + ActionLoop + Tools +
+Permissions` fires only on write-capable tools — read-only retrieval
+tools don't trigger agent classification (single retrieval call is
+not an agent loop).
+
+**API.** Three new endpoints under `/api/promptbio/organism/`:
+
+- `POST /build` — full BuildResponse bundle
+- `POST /validate` — ValidationReport for an existing spec
+- `GET  /catalogues` — 16 organs + 7 flows + 6 loops + 10 principles + 3 sizes
+
+**UI.** v3.0 Organism Builder card on `/promptbio` with use-case +
+target-phenotype + deployment + risk + tools + memory + quality
+knobs, classification verdict badge, principle-violation list,
+missing-organs list, anatomy diagram pre-block, 4-column anatomy view
+(identity / genome+runtime / belief+decision / observability+evolution),
+top-risks table, collapsible MVO + production-path lists.
+
+**Tests.** 16 new tests in `breedos/mvp/promptbio/organism/builder_test.go`:
+
+- Catalogues: 16 organs, 7 flows, 6 loops, 10 principles, 3 sizes
+- GTM worked example: species=GTM Strategy, size=meso, verbatim values
+- Principle 6: autopoiesis without observability → violation
+- §18 agent formula incomplete: write tools without action loop/permission → agent_incomplete
+- §17 workflow: empty spec → workflow classification
+- §19 model boundary: empty runtime+genome → model_reference_only
+- §14 MVO: 8 steps for any well-formed input
+- §23 production path: 16 steps
+- organ_map: all 16 organs wired to BreedOS module refs
+- diagram contains all canonical anchor labels (VALUES / CONSTITUTION / GENOME / RUNTIME / BELIEF STATE / DECISION / VALIDATION GATES / OBSERVABILITY / EVALUATION / AUTOPOIESIS)
+- JSON round-trip preserves organism type + 7 flows
+- Deterministic across re-runs (same content-addressed ID)
+
+Biological simulation path bit-identical to v0.7.36.
+
 ## [0.7.36] - 2026-06-28
 
 ### Added — Issue 16 Promptbio v1.3 Prompt Evaluation Lab

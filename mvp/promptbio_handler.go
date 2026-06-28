@@ -11,6 +11,7 @@ import (
 
 	"breedos-mvp/promptbio"
 	"breedos-mvp/promptbio/eval"
+	organismpkg "breedos-mvp/promptbio/organism"
 )
 
 func promptbioMapHandler(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +96,79 @@ func promptbioSimulateHandler(w http.ResponseWriter, r *http.Request) {
 		req.Replicates = 10
 	}
 	out := promptbio.Simulate(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+// v0.7.37 — Issue 33 v3.0 Unified Prompt Organism Architecture.
+// Three endpoints:
+//
+//   POST /api/promptbio/organism/build        → BuildResponse bundle
+//                                                (spec + diagram + organ_map +
+//                                                 flows + loops + MVO +
+//                                                 production_path + top_risks +
+//                                                 validation_report)
+//   POST /api/promptbio/organism/validate     → ValidationReport for an existing spec
+//   GET  /api/promptbio/organism/catalogues   → 16 organs + 7 flows + 6 loops +
+//                                                10 principles + 3 sizes
+func promptbioOrganismBuildHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req organismpkg.BuildRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.UseCase) == "" {
+		http.Error(w, "use_case is required", http.StatusBadRequest)
+		return
+	}
+	out := organismpkg.Build(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioOrganismValidateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req organismpkg.ValidateRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := organismpkg.Validate(req.Spec, req.Spec.PromptOrganism.OrganismType)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioOrganismCataloguesHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "use GET", http.StatusMethodNotAllowed)
+		return
+	}
+	out := organismpkg.CataloguesResponse{
+		Organs:     organismpkg.Organs(),
+		Flows:      organismpkg.Flows(),
+		Loops:      organismpkg.Loops(),
+		Principles: organismpkg.Principles(),
+		Sizes:      organismpkg.Sizes(),
+	}
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
