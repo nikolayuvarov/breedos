@@ -169,10 +169,80 @@
         <div id="nextMutation"></div>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid var(--ok);">
+      <div class="kicker">Issue 07 — Substrate Abstraction · v0.7.33</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Simulate evolution.</h2>
+      <p class="lede">
+        Run the same five core engine moves the biological simulator runs (truncation, balanced, drift, OCS-like, introgression) over the prompt-organism substrate. Population of 14-locus PromptOrganisms, deterministic placeholder judge (sum of weighted locus statuses — not a real LLM grader), per-strategy mean-fitness trajectory and Pareto front.
+      </p>
+      <p class="note">
+        v0.7.33 ships the substrate abstraction as a working contract: the engine kernel does not import promptbio; promptbio implements the engine.Individual / FitnessFunc / MutationOp / RecombinationOp interfaces. A real LLM-judge integration is queued (post-v0.8). Use the v0.1 Mapper above to inspect the ancestor's locus profile first.
+      </p>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px;">
+        <label style="font-size:13px;">Ancestor prompt
+          <textarea id="simAncestor" style="min-height:80px;" placeholder="Paste an ancestor prompt or use the v0.1 Mapper input above.">Напиши хорошую стратегию запуска продукта.</textarea>
+        </label>
+        <label style="font-size:13px;">Population size
+          <input id="simPop" type="number" value="30" min="4" max="200" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Generations
+          <input id="simGen" type="number" value="6" min="1" max="30" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Selection %
+          <input id="simSel" type="number" value="0.30" min="0.05" max="0.90" step="0.05" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Mutation rate
+          <input id="simMut" type="number" value="0.10" min="0.00" max="1.00" step="0.05" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Replicates
+          <input id="simRep" type="number" value="3" min="1" max="10" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Seed
+          <input id="simSeed" type="number" value="42" style="width:100%;">
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="simBtn" class="btn primary" type="button">Run substrate-promptbio simulation</button>
+        <span id="simStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="simResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Best risk-adjusted strategy</h2>
+        <p id="simSummary" style="margin:6px 0; color:var(--text);"></p>
+        <p id="simBanner" class="note" style="margin:6px 0; color:var(--muted); font-size:12px;"></p>
+        <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;" id="simHeadlines"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Per-strategy outcome</h2>
+        <p class="note" style="margin-top:0;">Final gain = mean Δfitness over replicates; risk = stdev of replicate end-state fitness. Substrate label is <code>promptbio</code> for every row (biology runs would tag <code>biology</code>).</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Code</th><th>Name</th><th>Final gain</th><th>Final risk</th><th>Pareto?</th><th>Summary</th></tr></thead>
+            <tbody id="simTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Trajectories (mean fitness per generation)</h2>
+        <div id="simTrajectoryGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Honesty layer</h2>
+        <ul id="simLimitations" style="margin:0 0 6px 20px;"></ul>
+        <p style="margin:8px 0 4px; color:var(--text);"><strong>What could be wrong:</strong></p>
+        <ul id="simWhatCouldBeWrong" style="margin:0 0 0 20px;"></ul>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.32 — Promptbio v0.1 Mapper + v0.2 Diff. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.33 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate Abstraction. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -360,6 +430,105 @@
       }
     }
 
+    // ─── v0.7.33 Substrate Abstraction — Simulate ──────────────────────────
+
+    function setSimStatus(text) {
+      const el = document.getElementById('simStatus');
+      if (el) el.textContent = text || '';
+    }
+
+    function renderTrajectoryCell(strategy) {
+      const traj = strategy.trajectory || [];
+      if (traj.length < 2) return '';
+      const max = Math.max(...traj);
+      const min = Math.min(...traj);
+      const span = (max - min) || 1;
+      const points = traj.map((v, i) => {
+        const x = (i / (traj.length - 1)) * 200;
+        const y = 60 - ((v - min) / span) * 50;
+        return x.toFixed(1) + ',' + y.toFixed(1);
+      }).join(' ');
+      return `<div style="border:1px solid var(--line); border-radius:8px; padding:8px;">
+        <div style="font-weight:700; font-size:13px; margin-bottom:4px;"><code>${escapeHtml(strategy.code)}</code></div>
+        <svg viewBox="0 0 200 64" style="width:100%; height:60px;">
+          <polyline points="${points}" fill="none" stroke="var(--accent2)" stroke-width="1.5" />
+        </svg>
+        <div style="font-size:11px; color:var(--muted); margin-top:4px;">gain ${strategy.final_gain.toFixed(3)} · risk ${strategy.final_risk.toFixed(3)}</div>
+      </div>`;
+    }
+
+    function renderSim(resp) {
+      document.getElementById('simSummary').textContent = resp.summary_text || '';
+      document.getElementById('simBanner').textContent = resp.honesty_banner || '';
+
+      const headlines = [
+        ['Best risk-adjusted', resp.best_risk_adjusted_code],
+        ['Best gain', resp.best_gain_code],
+        ['Lowest risk', resp.lowest_risk_code],
+        ['Pareto', (resp.pareto_codes || []).join(', ')],
+      ];
+      document.getElementById('simHeadlines').innerHTML = headlines
+        .filter(([_, v]) => v)
+        .map(([k, v]) => `<span class="delta-pill delta-neu"><strong>${escapeHtml(k)}</strong>: <code>${escapeHtml(v)}</code></span>`)
+        .join('');
+
+      const tbody = document.getElementById('simTable');
+      tbody.innerHTML = (resp.strategy_results || []).map(s => `
+        <tr>
+          <td><code>${escapeHtml(s.code)}</code></td>
+          <td>${escapeHtml(s.name)}</td>
+          <td>${s.final_gain.toFixed(3)}</td>
+          <td>${s.final_risk.toFixed(3)}</td>
+          <td>${s.pareto_optimal ? '<span style="color:var(--ok);">✓</span>' : ''}</td>
+          <td style="font-size:13px; color:var(--muted);">${escapeHtml(s.summary)}</td>
+        </tr>
+      `).join('');
+
+      document.getElementById('simTrajectoryGrid').innerHTML =
+        (resp.strategy_results || []).map(renderTrajectoryCell).join('');
+
+      document.getElementById('simLimitations').innerHTML =
+        (resp.limitations || []).map(l => '<li>' + escapeHtml(l) + '</li>').join('');
+      document.getElementById('simWhatCouldBeWrong').innerHTML =
+        (resp.what_could_be_wrong || []).map(l => '<li>' + escapeHtml(l) + '</li>').join('');
+
+      document.getElementById('simResultCard').hidden = false;
+    }
+
+    async function runSimulate() {
+      const body = {
+        ancestor_prompt:   document.getElementById('simAncestor').value || '',
+        population_size:   parseInt(document.getElementById('simPop').value, 10),
+        generations:       parseInt(document.getElementById('simGen').value, 10),
+        selection_percent: parseFloat(document.getElementById('simSel').value),
+        mutation_rate:     parseFloat(document.getElementById('simMut').value),
+        replicates:        parseInt(document.getElementById('simRep').value, 10),
+        seed:              parseInt(document.getElementById('simSeed').value, 10),
+      };
+      if (!body.ancestor_prompt.trim()) {
+        setSimStatus('error: ancestor_prompt is required.');
+        return;
+      }
+      setSimStatus('simulating (' + body.replicates + ' replicates × ' + body.generations + ' generations × ' + body.population_size + ' individuals)...');
+      try {
+        const res = await fetch('/api/promptbio/simulate', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || ('HTTP ' + res.status));
+        }
+        const data = await res.json();
+        renderSim(data);
+        const best = data.best_risk_adjusted_code || '?';
+        setSimStatus('done — best risk-adjusted: ' + best);
+      } catch (e) {
+        setSimStatus('error: ' + e.message);
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('analyzeBtn').addEventListener('click', analyze);
       document.getElementById('exampleRawBtn').addEventListener('click', () => {
@@ -373,6 +542,7 @@
         document.getElementById('ancestorInput').value = RAW_EXAMPLE;
         document.getElementById('descendantInput').value = STRUCTURED_EXAMPLE;
       });
+      document.getElementById('simBtn').addEventListener('click', runSimulate);
     });
   </script>
 </body>

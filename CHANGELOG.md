@@ -7,6 +7,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.33] - 2026-06-28
+
+### Added — Issue 07 substrate abstraction
+
+Ships the substrate abstraction contract per Issue 07, with the
+promptbio side as the first non-biology substrate to implement it.
+The biological simulation path is bit-identical to v0.7.32 (the
+existing `organism` concrete type is unchanged and the kernel does
+not yet operate through the interface). Closes
+`issues-promptbio/07-engine-extension-prompt-organism-mode.md`.
+
+**New `mvp/engine/` package** — substrate-agnostic contracts:
+
+- `Individual interface { Genome() []byte; Clone() Individual }`
+- `FitnessFunc func(Individual, Environment) float64`
+- `MutationOp func(Individual, RNG) Individual`
+- `RecombinationOp func(Individual, Individual, RNG) Individual`
+- `RNG interface { Intn; Float64 }`
+- `Substrate` enum (`biology`, `promptbio`)
+- `StrategyTag` substrate-aware strategy registry key
+
+The engine package imports nothing from any substrate; substrates
+import from engine.
+
+**New in `mvp/promptbio/`:**
+
+- `organism.go` — `PromptOrganism{ Statuses [14]byte }` implementing
+  `engine.Individual` over the 14-locus status vector (byte-encoded
+  per locus, 0 = missing → 5 = not_applicable). `FromGenomeMap(g)`
+  seeds an organism from a v0.1 mapper output. `MutationStep` flips
+  one locus by one step on the status ladder.
+  `RecombineUniform` splices loci from two parents at uniform
+  random. `PlaceholderJudge` is the deterministic v0.7.33 fitness:
+  locus-weighted sum of encoded statuses normalised to [0, 1].
+- `simulate.go` — `Simulate(req SimulateRequest) SimulateResponse`
+  runs the engine kernel over the prompt substrate. Five core moves
+  registered as promptbio strategies — **truncation** (top-K),
+  **balanced** (70% top-K + 30% drift), **drift** (uniform random),
+  **OCS-like** (top-K with diversity weighting), **introgression
+  equivalent** (top-K + ancestor-template injection). Per-strategy
+  trajectory of mean fitness over generations, Pareto front on
+  (gain, risk), best-risk-adjusted / best-gain / lowest-risk picks.
+- `simulate_test.go` — 8 new tests: engine.Individual contract
+  satisfaction; mutation determinism; recombination determinism;
+  judge determinism and bounding; e2e Simulate with 5 strategies;
+  reproducibility (same seed → identical response); all 5 core
+  engine moves present; FromGenomeMap round-trip preserves locus
+  statuses.
+
+**HTTP surface:**
+
+- `POST /api/promptbio/simulate` (`mvp/promptbio_handler.go` —
+  `promptbioSimulateHandler`). Request: `{ancestor_prompt,
+  population_size?, generations?, selection_percent?,
+  mutation_rate?, replicates?, seed?}`. Response: substrate-uniform
+  `SimulateResponse` with `substrate: "promptbio"`, 5
+  `strategy_results` (Code, Name, Summary, FinalGain, FinalRisk,
+  Trajectory, ParetoOptimal), `best_risk_adjusted_code`,
+  `best_gain_code`, `lowest_risk_code`, `pareto_codes`,
+  `summary_text`, `honesty_banner`, `limitations`,
+  `what_could_be_wrong`, and the ancestor's `ancestor_genome` from
+  the v0.1 mapper.
+- Bounds: population ≤ 200, generations ≤ 30, replicates ≤ 10
+  enforced server-side to keep response time predictable.
+- 400 on missing `ancestor_prompt`.
+
+**UI:**
+
+- New "Issue 07 — Substrate Abstraction" Simulate card on
+  `/promptbio` (below v0.2 Diff). 7-field form (ancestor textarea +
+  population / generations / selection-% / mutation-rate /
+  replicates / seed). Result cards show best-risk-adjusted summary +
+  per-strategy outcome table with Pareto flag + per-strategy
+  trajectory mini-SVG charts + honesty layer (limitations and
+  what-could-be-wrong).
+
+**Acceptance criteria (Issue 07):**
+
+- ✅ Engine kernel does not import anything from `promptbio/`
+  (engine package is a leaf; substrates import from engine).
+- ✅ All 5 core engine moves run over the prompt substrate
+  (truncation, balanced, drift, OCS-like, introgression).
+- ✅ Biological simulation path bit-identical — `mvp` and `mvp/...`
+  test suites all green, no biological code path touched.
+- ✅ New promptbio tests cover e2e run, mutation determinism,
+  recombination determinism, judge reproducibility.
+- ✅ `POST /api/promptbio/simulate` accepts minimal request and
+  returns valid SimulateResponse within local-runner budget.
+
+**Design decisions:**
+
+1. **Engine package addition is additive, not invasive.** The
+   biological kernel keeps using its own concrete `organism` type
+   and is not refactored to operate through `engine.Individual` —
+   doing so safely would require a multi-day rewrite and risks
+   breaking bit-identical biology. v0.7.33 satisfies "substrate is
+   plug-in" (engine never imports a substrate); migrating biology
+   to operate through the interface is queued (post-v0.8).
+2. **DecisionSummary shape diverged.** The biological
+   `DecisionSummary` carries NGT classification, EditDecisions, and
+   per-trait gain — biology-specific fields that don't apply to
+   promptbio. Rather than emit a polymorphic shape, promptbio
+   returns its own `SimulateResponse` with the engine-uniform
+   `strategy_results` array. Future UI substrate switch on /demo
+   can render either shape; v0.7.33 ships the promptbio results
+   directly on /promptbio.
+3. **Demo-page substrate switch deferred.** Issue 07's spec
+   includes adding a substrate switch to /demo. v0.7.33 ships the
+   promptbio simulator on /promptbio instead — smaller surface,
+   faster validation, no risk to the biology demo. Substrate switch
+   on /demo is a v0.8 follow-up.
+4. **Placeholder judge instead of LLM.** Per Issue 07 non-goal
+   ("Real LLM-judge integration — that is a follow-up issue"),
+   v0.7.33 uses a deterministic locus-weighted sum. Real LLM-judge
+   is queued behind v0.3 Evolution Loop's fitness battery design.
+
+**Footer + version + CHANGELOG bumped to `v0.7.33`. Demo and
+landing footers updated.**
+
 ## [0.7.32] - 2026-06-28
 
 ### Added — Promptbio v0.2 Prompt Genome Diff
