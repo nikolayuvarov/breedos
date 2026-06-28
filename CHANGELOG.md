@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.38] - 2026-06-29
+
+### Added — Issue 34 Promptbio v3.1 Prompt Organism Design Patterns
+
+Zoology over the v3.0 anatomy. Closes
+`issues-promptbio/34-prompt-organism-design-patterns.md`.
+
+**12 canonical pattern cards.** Each with all 20 PATTERN CARD fields
+populated (name / intent / use_when / avoid_when / organism_size /
+agency_level / core_organs / optional_organs / genome / epistemology /
+decision_planning / runtime / memory / tools / output_phenotype /
+failure_modes / required_tests / minimal_prompt_skeleton /
+production_architecture / anti_patterns / evolution_path):
+
+- Explainer Cell (micro, A0)
+- Research Synthesizer (meso, A1)
+- Strategy Advisor (meso, A1)
+- Strategy Critic (meso, A1)
+- Code Repair (meso, A2)
+- Document Review (meso, A1)
+- Data Analysis (meso, A2)
+- Eval Judge (meso, A1)
+- Memory-Aware Companion (meso, A1)
+- Agentic Tool-Using (macro, A3)
+- High-Assurance Advisor (macro, A1 capped)
+- Autopoietic Ecosystem (macro, A4 capped)
+
+**Selection matrix.** 34 niche-keyword rows. Override priority:
+
+1. tools=external_actions OR deployment=agent → Agentic Tool-Using
+2. quality=high-assurance OR risk=high → High-Assurance Advisor
+3. memory ∈ {project, long-term} → Memory-Aware Companion
+4. Niche keyword match → matrix row
+5. Default → Strategy Advisor
+
+**8 composition rules (§1688-1737).** `no_agency_without_control /
+no_memory_without_truth_or_privacy /
+no_research_without_source_evaluation / no_strategy_without_constraints
+/ no_critique_without_repair / no_high_assurance_on_low_risk /
+no_one_giant_prompt / stable_core_adaptive_pattern`. Compositions
+violating a rule emit RuleViolation with rule_id + rule_name + detail + fix.
+
+**10 anti-pattern detectors (§1741-1929).** `God Prompt / Confident
+Oracle / Tool Gremlin / Memory Hoarder / Eval Gamer / Paper Shield /
+Format Tyrant / Agent Without Stop Condition / Strategy Fantasist /
+Document Puppet`. Each runs against any v3.0 PromptOrganismSpec via
+the linter endpoint; emits Finding(name, symptom, treatment, evidence).
+
+**API.** Four new endpoints under `/api/promptbio/`:
+
+- `POST /pattern-select` — PatternRecommendation (11-section bundle)
+- `POST /pattern-compose` — CompositionPlan with rule violations
+- `POST /anti-patterns` — AntiPatternResponse (linter findings)
+- `GET  /patterns` — 12 cards + selection matrix + 8 composition rules + 10 anti-patterns
+
+**UI.** v3.1 Design Patterns card on `/promptbio` with task-niche +
+target-phenotype + 5 envelope knobs (deployment / risk / tools /
+memory / quality), recommended-pattern badge with size + agency,
+why-this-pattern rationale, required organs, anti-pattern risks,
+next action, copy-paste minimal prompt skeleton, required tests
+list, full 20-field card detail, plus 12-tile catalogue grid (click
+any tile to re-select).
+
+**Tests.** 22 new in `breedos/mvp/promptbio/patterns/patterns_test.go`:
+
+- 12-card catalogue completeness (all 20 fields populated, no duplicates)
+- core_organs subset-of-v3.0 validation
+- selector matrix routing across 11 canonical niches
+- override priority (tools / quality / memory each fires)
+- GTM worked example: Strategy Advisor → composition with Critic +
+  Eval Judge passes all 8 rules
+- Rule 5 (no critique without repair) fires on Strategy Critic alone
+- Rule 6 (no high-assurance on low-risk) fires on HA + Explainer Cell
+- Rule 7 (no one giant prompt) fires on 4+ patterns
+- All 10 anti-pattern detectors each fire on canonical bad-spec fixtures
+- 10 anti-patterns / 8 composition rules / 34-row matrix counts
+- JSON round-trip
+- Deterministic across re-runs
+
+Biological simulation path bit-identical to v0.7.37.
+
 ## [0.7.37] - 2026-06-29
 
 ### Added — Issue 33 Promptbio v3.0 Unified Prompt Organism Architecture

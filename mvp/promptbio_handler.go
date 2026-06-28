@@ -12,6 +12,7 @@ import (
 	"breedos-mvp/promptbio"
 	"breedos-mvp/promptbio/eval"
 	organismpkg "breedos-mvp/promptbio/organism"
+	"breedos-mvp/promptbio/patterns"
 )
 
 func promptbioMapHandler(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +169,95 @@ func promptbioOrganismCataloguesHandler(w http.ResponseWriter, r *http.Request) 
 		Loops:      organismpkg.Loops(),
 		Principles: organismpkg.Principles(),
 		Sizes:      organismpkg.Sizes(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+// v0.7.38 — Issue 34 v3.1 Prompt Organism Design Patterns.
+// Four endpoints:
+//
+//   POST /api/promptbio/pattern-select   → PatternRecommendation
+//   POST /api/promptbio/pattern-compose  → CompositionPlan with rule violations
+//   POST /api/promptbio/anti-patterns    → AntiPatternResponse (linter)
+//   GET  /api/promptbio/patterns         → 12 cards + selection matrix +
+//                                           8 composition rules + 10 anti-patterns
+func promptbioPatternSelectHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req patterns.SelectorRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.TaskNiche) == "" {
+		http.Error(w, "task_niche is required", http.StatusBadRequest)
+		return
+	}
+	out := patterns.SelectPattern(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioPatternComposeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req patterns.ComposeRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := patterns.Compose(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioAntiPatternsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req patterns.AntiPatternRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := patterns.DetectAntiPatterns(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioPatternsListHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "use GET", http.StatusMethodNotAllowed)
+		return
+	}
+	out := patterns.CataloguesResponse{
+		Patterns:         patterns.Cards(),
+		SelectionMatrix:  patterns.SelectionMatrix(),
+		CompositionRules: patterns.CompositionRules(),
+		AntiPatterns:     patterns.AntiPatternsCatalogue(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)

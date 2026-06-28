@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology + v1.3 Eval Lab + v3.0 Organism Builder</title>
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology + v1.3 Eval Lab + v3.0 Organism Builder + v3.1 Design Patterns</title>
   <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
@@ -591,10 +591,78 @@ Output the launch strategy.</textarea>
         <details style="margin-top:10px;"><summary style="cursor:pointer; font-weight:bold;">§23 Full Production Path (16 steps)</summary><ol id="orgProd" style="margin:8px 0 0 20px;"></ol></details>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid #8b5cf6;">
+      <div class="kicker">Promptbio v3.1 — Prompt Organism Design Patterns · v0.7.38 (Issue 34)</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Right pattern before right prompt.</h2>
+      <p class="lede">
+        v3.1 is zoology over the v3.0 anatomy: 12 canonical pattern cards (Explainer Cell · Research Synthesizer · Strategy Advisor · Strategy Critic · Code Repair · Document Review · Data Analysis · Eval Judge · Memory-Aware Companion · Agentic Tool-Using · High-Assurance Advisor · Autopoietic Ecosystem), 34-row selection matrix, 8 composition rules, 10 anti-patterns. Pick inputs → get pattern + size + agency + required organs + minimal prompt skeleton + required tests.
+      </p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;">
+        <label style="font-size:13px;">Task niche
+          <input id="patNiche" type="text" value="GTM Product Launch Strategy">
+        </label>
+        <label style="font-size:13px;">Target phenotype
+          <input id="patPhenotype" type="text" value="structured launch strategy">
+        </label>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap:10px; margin-top:10px;">
+        <label style="font-size:13px;">Deployment
+          <select id="patDeployment"><option>single-turn</option><option selected>multi-turn</option><option>agent</option><option>product</option></select>
+        </label>
+        <label style="font-size:13px;">Risk
+          <select id="patRisk"><option>low</option><option selected>medium</option><option>high</option></select>
+        </label>
+        <label style="font-size:13px;">Tools
+          <select id="patTools"><option>none</option><option selected>read-only</option><option>write</option><option>external_actions</option></select>
+        </label>
+        <label style="font-size:13px;">Memory
+          <select id="patMemory"><option>disabled</option><option selected>session</option><option>project</option><option>long-term</option></select>
+        </label>
+        <label style="font-size:13px;">Quality
+          <select id="patQuality"><option>draft</option><option>reliable</option><option selected>production</option><option>high-assurance</option></select>
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="patSelectBtn" class="btn primary" type="button">Select pattern</button>
+        <button id="patCatalogBtn" class="btn" type="button">Show 12-pattern catalogue</button>
+        <span id="patStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="patResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Recommended pattern</h2>
+        <p style="margin:6px 0;"><strong id="patName" style="font-size:18px; color:#8b5cf6;"></strong> &nbsp; <span id="patSize" style="padding:3px 8px; border-radius:4px; background:#1f2937; color:white; font-size:12px;"></span> &nbsp; <span id="patAgency" style="padding:3px 8px; border-radius:4px; background:#374151; color:white; font-size:12px;"></span></p>
+        <p style="margin:6px 0; font-size:13px;" id="patWhy"></p>
+        <p style="margin:6px 0; font-size:13px;"><strong>Required organs:</strong> <span id="patRequiredOrgans"></span></p>
+        <p style="margin:6px 0; font-size:13px;"><strong>Anti-pattern risks:</strong> <span id="patAntiRisks" style="color:var(--warn, #d97706);"></span></p>
+        <p style="margin:6px 0; font-size:13px;"><strong>Next action:</strong> <span id="patNextAction"></span></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Minimal prompt skeleton (copy-paste starter)</h2>
+        <pre id="patSkeleton" style="background:#0b0f14; color:#cdd6f4; padding:12px; border-radius:6px; font-size:12px; overflow-x:auto; white-space:pre-wrap;"></pre>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Required tests for this pattern</h2>
+        <ul id="patTests" style="margin:0 0 0 20px; font-size:13px;"></ul>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <details><summary style="cursor:pointer; font-weight:bold;">Full pattern card (20 fields)</summary><pre id="patFullCard" style="background:#0b0f14; color:#cdd6f4; padding:10px; border-radius:6px; font-size:11px; overflow-x:auto;"></pre></details>
+      </div>
+    </div>
+
+    <div id="patCatalogueCard" class="card" style="margin-bottom:18px;" hidden>
+      <h2 style="margin-top:0; font-size:22px;">12 canonical patterns</h2>
+      <div id="patCatalogueGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:10px;"></div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.37 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS + v1.3 Eval Lab + v3.0 Unified Prompt Organism Architecture. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.38 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS + v1.3 Eval Lab + v3.0 Unified Prompt Organism Architecture + v3.1 Design Patterns. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -1318,6 +1386,77 @@ Output the launch strategy.</textarea>
       }
 
       document.getElementById('orgBuildBtn').addEventListener('click', runOrgBuild);
+
+      async function runPatSelect() {
+        document.getElementById('patStatus').textContent = 'selecting pattern…';
+        try {
+          const res = await fetch('/api/promptbio/pattern-select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              task_niche: document.getElementById('patNiche').value,
+              target_phenotype: document.getElementById('patPhenotype').value,
+              deployment: document.getElementById('patDeployment').value,
+              risk_level: document.getElementById('patRisk').value,
+              data_sources: ['user_input'],
+              tools: document.getElementById('patTools').value,
+              memory: document.getElementById('patMemory').value,
+              quality_level: document.getElementById('patQuality').value
+            })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const r = await res.json();
+          renderPatternRecommendation(r);
+          document.getElementById('patStatus').textContent = 'done — ' + r.recommended_pattern;
+        } catch (e) {
+          document.getElementById('patStatus').textContent = 'error: ' + e.message;
+        }
+      }
+
+      function renderPatternRecommendation(r) {
+        document.getElementById('patResultCard').hidden = false;
+        document.getElementById('patName').textContent = r.recommended_pattern;
+        document.getElementById('patSize').textContent = r.organism_size;
+        document.getElementById('patAgency').textContent = r.agency_level;
+        document.getElementById('patWhy').textContent = r.why_this_pattern || '';
+        document.getElementById('patRequiredOrgans').textContent = (r.required_organs || []).join(', ');
+        document.getElementById('patAntiRisks').textContent = (r.anti_pattern_risks || []).join(', ');
+        document.getElementById('patNextAction').textContent = r.next_action || '';
+        document.getElementById('patSkeleton').textContent = r.minimal_prompt_skeleton || '';
+        const tests = document.getElementById('patTests');
+        tests.innerHTML = '';
+        (r.required_tests || []).forEach(s => { const li = document.createElement('li'); li.textContent = s; tests.appendChild(li); });
+        document.getElementById('patFullCard').textContent = JSON.stringify(r.card, null, 2);
+      }
+
+      async function runPatCatalogue() {
+        document.getElementById('patStatus').textContent = 'loading catalogue…';
+        try {
+          const res = await fetch('/api/promptbio/patterns');
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const r = await res.json();
+          const card = document.getElementById('patCatalogueCard');
+          card.hidden = false;
+          const grid = document.getElementById('patCatalogueGrid');
+          grid.innerHTML = '';
+          (r.patterns || []).forEach(p => {
+            const tile = document.createElement('div');
+            tile.style.cssText = 'border:1px solid #374151; border-radius:6px; padding:10px; background:#0b0f14; cursor:pointer;';
+            tile.innerHTML = `<strong style="color:#8b5cf6;">${escapeHtml(p.name)}</strong><br><span style="font-size:11px; color:var(--muted);">${escapeHtml(p.organism_size)} · ${escapeHtml(p.agency_level)}</span><br><span style="font-size:12px;">${escapeHtml(p.intent.slice(0, 100))}…</span>`;
+            tile.onclick = () => {
+              document.getElementById('patNiche').value = p.name;
+              runPatSelect();
+            };
+            grid.appendChild(tile);
+          });
+          document.getElementById('patStatus').textContent = '12 patterns loaded';
+        } catch (e) {
+          document.getElementById('patStatus').textContent = 'error: ' + e.message;
+        }
+      }
+
+      document.getElementById('patSelectBtn').addEventListener('click', runPatSelect);
+      document.getElementById('patCatalogBtn').addEventListener('click', runPatCatalogue);
     });
   </script>
 </body>
