@@ -7,6 +7,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.35] - 2026-06-28
+
+### Added — Issue 30 Promptbio v2.7 Epistemology & Truth Maintenance
+
+Ships the v2.7 truth-maintenance substrate every higher decision
+layer (Decision Theory v2.8, Constitution, Observability) will
+reuse. Closes `issues-promptbio/30-prompt-epistemology-truth-maintenance.md`.
+
+**The Y = Generate(P, B_t, C_t) discipline.** Outputs must be
+generated from a managed belief state, not raw context. Raw
+incoming text is first classified into the 12-element claim
+ontology (`fact / user_claim / document_claim / tool_result /
+assumption / inference / hypothesis / recommendation / preference /
+constraint / unknown / deprecated`), ranked on the 10-tier source
+hierarchy (`current_user_correction > current_user_fact >
+verified_tool_result > authoritative_document > confirmed_memory >
+older_memory > unverified_user_claim > retrieved_snippet >
+model_inference > assumption`), tagged on the 5-axis confidence
+model (`source / interpretation / inference / action / freshness`)
+with the qualitative label set (`high, medium, low, unknown,
+needs_verification` — numeric probabilities are explicitly disallowed),
+and binned into the 8-slot belief-state schema (`known_facts /
+constraints / assumptions / hypotheses / unknowns / contradictions /
+deprecated` keyed by objective).
+
+**Truth Maintenance System.** Recommendations declare `depends_on`
+claim IDs; when any dependency deprecates or its confidence drops,
+TMS marks the recommendation `needs_revision` in the same response
+cycle. The §13 7-step contradiction protocol surfaces conflicts via
+9 classified contradiction types; critical equal-authority conflicts
+emit a `clarification_request` rather than blending. The §14 8-step
+belief-update protocol routes new evidence through the source
+hierarchy and refuses to inflate confidence without a new evidence
+record (anti-pattern §18.2).
+
+**Runtime gate.** The §19 10-question pre-output checklist runs the
+§18 9 anti-pattern detectors:
+
+- `assumption_laundering` (§18.1): assumption surfaces in output without `working_assumption` tag
+- `confidence_inflation` (§18.2): high-confidence language for assumption-typed claim
+- `source_flattening` (§18.3): multiple source tiers; output omits provenance
+- `memory_fossilization` (§18.4): older_memory claim lacks freshness label
+- `contradiction_blending` (§18.5): contradictions exist; output doesn't surface
+- `fake_precision` (§18.6): numeric probability without non-model source at conf ≥ medium
+- `citation_laundering` (§18.7): quoted snippet without source attribution
+- `tool_overtrust` (§18.8): tool_result rendered as authoritative truth
+- `model_self_reference_as_evidence` (§18.9): model_inference cited as evidence
+
+For medium/high risk_level the gate refuses to emit a response
+lacking the verbatim Epistemic status block (§20) and renders it
+automatically from the belief state.
+
+**EpistemicScore.** The §22 9-component formula `0.15C + 0.15S +
+0.15U + 0.10K + 0.10M + 0.10D + 0.10R + 0.10P + 0.05F` (claim
+classification / source handling / uncertainty calibration /
+contradiction handling / memory policy / dependency tracking /
+recommendation grounding / provenance / freshness) → score in [0,5]
+with the 5-band scale (`unsafe / weak / acceptable / robust /
+high-assurance`).
+
+**API.** Three new POST endpoints, all under `/api/promptbio/epistemology/`:
+
+- `/plan` — full 16-section PromptEpistemologyPlan (extension over
+  spec: also returns the derived belief_state so the UI doesn't
+  need a second round-trip).
+- `/gate` — runtime-gate verdict over a (belief_state, candidate_output) pair.
+- `/update` — applies a new claim through the belief-update protocol;
+  returns new_belief_state, deprecated_claims, recommendations_to_revise,
+  contradictions.
+
+**UI.** New Promptbio v2.7 card on `/promptbio` with use-case +
+risk-level + free-form raw-context (one statement per line, prefix
+with source kind), build-plan + run-gate buttons, and a four-pane
+belief-state inspector (Known facts · Working assumptions · Unknowns
+· Contradictions) plus classified-claims table with per-claim
+type/source/confidence axes/state badges, runtime-gate verdict
+panel with per-check pass/fail and per-anti-pattern detail, plus
+drop-in EPISTEMIC PROTOCOL and PSL `epistemology:` reference blocks.
+
+**Tests.** 14 new tests in `epistemology_test.go`: the §24 10-test
+battery (assumption_laundering, user_correction, conflict_handling,
+fake_precision, tool_overtrust, memory_fossilization, citation_laundering,
+recommendation_dependency, stale_source, unsupported_market_claim)
+passes 10/10. Plus 4 supporting tests: confidence-no-inflation,
+high-risk requires status block, plan returns all 16 sections + 12
+claim types + 10 source tiers + 10 gate questions + 7-step
+contradiction protocol + 8-step update protocol, JSON round-trip.
+
+**Non-goals (per Issue 30 spec).** No absolute truth or external
+fact-checking — v2.7 maintains intra-task coherence only. No
+decision-making over the belief state (that is v2.8). No persistent
+cross-session memory implementation (policy only). No multilingual
+claim parsing. No new-evidence generation (no web crawling). No
+probabilistic / Bayesian numeric confidence (qualitative labels by
+design). Does not replace the Constitution layer.
+
+Biological simulation path bit-identical to v0.7.34.
+
 ## [0.7.34] - 2026-06-28
 
 ### Added — Issue 03 Prompt Evolution Loop

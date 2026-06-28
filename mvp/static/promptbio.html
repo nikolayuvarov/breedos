@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop</title>
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology</title>
   <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
@@ -311,10 +311,88 @@
         <ul id="evoLimitations" style="margin:0 0 0 20px;"></ul>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid var(--err, #c0392b);">
+      <div class="kicker">Promptbio v2.7 — Epistemology &amp; Truth Maintenance · v0.7.35 (Issue 30)</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Triage the raw context. Get a belief state.</h2>
+      <p class="lede">
+        Y = Generate(P, B_t, C_t). Every output must come from a managed <strong>belief state</strong>, not from raw context. This module classifies incoming statements into the 12-type claim ontology, ranks them on the 10-tier source hierarchy, tags 5-axis confidence, and renders the four-pane inspector (Known facts · Working assumptions · Unknowns · Contradictions).
+      </p>
+      <p class="note">
+        v0.7.35 ships the full plan endpoint (16 sections), the runtime gate (10 checks + 9 anti-pattern detectors), and the belief-update protocol with deprecate + propagate. Decision Theory layer (v2.8) consumes the belief state.
+      </p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;">
+        <label style="font-size:13px;">Use case
+          <input id="epPrompt" type="text" value="Launch strategy review for a B2B SaaS pricing change">
+        </label>
+        <label style="font-size:13px;">Risk level
+          <select id="epRisk"><option>low</option><option selected>medium</option><option>high</option></select>
+        </label>
+      </div>
+      <label style="font-size:13px; display:block; margin-top:8px;">Raw context (one statement per line; first token is the source kind: user/document/tool/memory/web/RAG)
+        <textarea id="epContext" style="min-height:140px;">user Our deadline is Friday.
+user We must respect the existing customer contract.
+document Per the 2025 pricing audit, churn rises 4% above $99/mo.
+tool calc returned: ARR_uplift_estimate = 12%
+memory Q3 plan said we would launch the pro tier in October.
+user Actually, I meant the team tier, not pro.</textarea>
+      </label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="epPlanBtn" class="btn primary" type="button">Build plan + belief state</button>
+        <button id="epGateBtn" class="btn" type="button">Run runtime gate</button>
+        <span id="epStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="epResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Epistemic diagnosis &amp; score</h2>
+        <p id="epDiagnosis" style="margin:6px 0;"></p>
+        <p style="margin:6px 0;"><strong>EpistemicScore:</strong> <span id="epScore"></span> — <span id="epBand"></span></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Belief state — 4-pane inspector</h2>
+        <p class="note" style="margin-top:0;">Source hierarchy: current_user_correction &gt; current_user_fact &gt; verified_tool_result &gt; authoritative_document &gt; confirmed_memory &gt; older_memory &gt; unverified_user_claim &gt; retrieved_snippet &gt; model_inference &gt; assumption.</p>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--ok, #16a34a);">Known facts</h3><ul id="epFacts" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--warn, #d97706);">Working assumptions</h3><ul id="epAssumptions" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--muted, #6b7280);">Unknowns</h3><ul id="epUnknowns" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--err, #c0392b);">Contradictions</h3><ul id="epContradictions" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Classified claims</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Type</th><th>Source tier</th><th>Conf (src/intp/inf/act/fresh)</th><th>State</th><th>Content</th></tr></thead>
+            <tbody id="epClaims"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Runtime gate result</h2>
+        <p id="epGateVerdict" style="margin:6px 0;"></p>
+        <h3 style="margin:8px 0 4px; font-size:14px;">10 checks</h3>
+        <ul id="epGateChecks" style="margin:0 0 0 20px; font-size:13px;"></ul>
+        <h3 style="margin:10px 0 4px; font-size:14px;">Anti-pattern hits</h3>
+        <ul id="epAntiPatterns" style="margin:0 0 0 20px; font-size:13px;"></ul>
+        <h3 style="margin:10px 0 4px; font-size:14px;">Epistemic status block</h3>
+        <pre id="epStatusBlock" style="background:#0b0f14; color:#cdd6f4; padding:10px; border-radius:6px; font-size:12px; overflow-x:auto;"></pre>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Reference blocks (drop-in)</h2>
+        <details><summary style="cursor:pointer;">EPISTEMIC PROTOCOL (9 clauses)</summary><pre id="epPromptModule" style="background:#0b0f14; color:#cdd6f4; padding:10px; border-radius:6px; font-size:12px; overflow-x:auto;"></pre></details>
+        <details><summary style="cursor:pointer;">PSL <code>epistemology:</code> block</summary><pre id="epPSLBlock" style="background:#0b0f14; color:#cdd6f4; padding:10px; border-radius:6px; font-size:12px; overflow-x:auto;"></pre></details>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.34 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.35 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -695,6 +773,154 @@
         }
       }
       document.getElementById('evoBtn').addEventListener('click', runEvolve);
+
+      function parseEpContext() {
+        const raw = document.getElementById('epContext').value || '';
+        const items = [];
+        let i = 0;
+        raw.split(/\n+/).forEach(line => {
+          line = line.trim();
+          if (!line) return;
+          const m = line.match(/^(user|document|tool|memory|web|RAG)\s+(.*)$/i);
+          let kind = 'user_input', text = line;
+          if (m) {
+            const k = m[1].toLowerCase();
+            kind = k === 'user' ? 'user_input' : (k === 'rag' ? 'RAG' : k);
+            text = m[2];
+          }
+          items.push({ id: 'ctx_' + (++i), text: text, source_kind: kind });
+        });
+        return items;
+      }
+
+      function setEpStatus(text) {
+        document.getElementById('epStatus').textContent = text;
+      }
+
+      let lastBeliefState = null;
+      let lastClaims = [];
+
+      function renderBeliefState(plan) {
+        const facts = (plan.belief_state && plan.belief_state.known_facts) || [];
+        const assumptions = (plan.belief_state && plan.belief_state.assumptions) || [];
+        const unknowns = (plan.belief_state && plan.belief_state.unknowns) || [];
+        const contradictions = (plan.belief_state && plan.belief_state.contradictions) || [];
+        const claims = (plan.belief_state && plan.belief_state.claims) || {};
+        const fill = (id, ids) => {
+          const ul = document.getElementById(id);
+          ul.innerHTML = '';
+          if (!ids.length) { ul.innerHTML = '<li style="color:var(--muted);">(none)</li>'; return; }
+          ids.forEach(cid => {
+            const c = claims[cid] || {};
+            const li = document.createElement('li');
+            li.textContent = (c.content || cid).slice(0, 120);
+            ul.appendChild(li);
+          });
+        };
+        fill('epFacts', facts);
+        fill('epAssumptions', assumptions);
+        fill('epUnknowns', unknowns);
+        fill('epContradictions', contradictions);
+
+        const tbody = document.getElementById('epClaims');
+        tbody.innerHTML = '';
+        Object.values(claims).forEach(c => {
+          const tr = document.createElement('tr');
+          const cf = c.confidence || {};
+          const conf = [cf.source, cf.interpretation, cf.inference, cf.action, cf.freshness].map(x => (x || '?').slice(0, 4)).join('/');
+          tr.innerHTML = `<td><code>${escapeHtml(c.id)}</code></td><td>${escapeHtml(c.type)}</td><td>${escapeHtml(c.source)}</td><td>${escapeHtml(conf)}</td><td>${escapeHtml(c.state || '')}</td><td>${escapeHtml((c.content || '').slice(0, 80))}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+
+      async function runEpPlan() {
+        setEpStatus('building plan…');
+        const useCase = document.getElementById('epPrompt').value;
+        const risk = document.getElementById('epRisk').value;
+        const rawContext = parseEpContext();
+        try {
+          const res = await fetch('/api/promptbio/epistemology/plan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              prompt_system_description: 'BreedOS Promptbio v2.7 inspector',
+              use_case: useCase,
+              data_sources: [{ kind: 'user_input' }, { kind: 'document' }, { kind: 'tool' }, { kind: 'memory' }],
+              risk_level: risk,
+              memory_mode: 'session',
+              tools: ['calculator'],
+              known_epistemic_risks: ['assumption_laundering'],
+              raw_context: rawContext
+            })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const plan = await res.json();
+          // The plan endpoint returns the 16 sections plus a derived belief_state (we build it client-side from raw_context here for the inspector).
+          // We need the belief state — call the update endpoint with an empty prior + first claim, or just classify locally. For now, request a plan + a separate update to get belief_state shape.
+          // Simpler: re-request via update with a no-op to get belief_state. Faster: hit the gate endpoint with a dummy belief_state… Best: ask plan to expose claims. Re-using server logic, we add a belief_state to plan output in the JSON we render here.
+          // For v0.7.35 the plan endpoint also returns belief_state via the response (extension).
+          lastBeliefState = plan.belief_state || { claims: {}, known_facts: [], assumptions: [], unknowns: [], contradictions: [] };
+          lastClaims = Object.values(lastBeliefState.claims || {});
+          document.getElementById('epResultCard').hidden = false;
+          document.getElementById('epDiagnosis').innerHTML = `<strong>Main risk:</strong> ${escapeHtml(plan.epistemic_diagnosis.main_epistemic_risk)} · <strong>likely confused:</strong> ${escapeHtml(plan.epistemic_diagnosis.claims_likely_confused)} · <strong>required TMS level:</strong> ${escapeHtml(plan.epistemic_diagnosis.required_truth_maintenance_level)}`;
+          document.getElementById('epScore').textContent = (plan.epistemic_score || 0).toFixed(2);
+          document.getElementById('epBand').textContent = plan.epistemic_score_band || '';
+          renderBeliefState({ belief_state: lastBeliefState });
+          document.getElementById('epPromptModule').textContent = plan.epistemic_prompt_module || '';
+          document.getElementById('epPSLBlock').textContent = plan.epistemic_psl_block || '';
+          setEpStatus('plan ready (score ' + (plan.epistemic_score || 0).toFixed(2) + ', ' + lastClaims.length + ' claims)');
+        } catch (e) {
+          setEpStatus('error: ' + e.message);
+        }
+      }
+
+      async function runEpGate() {
+        if (!lastBeliefState) { setEpStatus('build a plan first'); return; }
+        setEpStatus('running gate…');
+        const risk = document.getElementById('epRisk').value;
+        const candidateOutput = 'Based on the analysis, the deadline is Friday and we should target $99/mo.\n\nEpistemic status:\n- Known facts: ARR uplift 12%\n- Working assumptions: deadline Friday\n- Contradictions: pro tier vs team tier (memory vs user_correction)';
+        try {
+          const res = await fetch('/api/promptbio/epistemology/gate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              belief_state: lastBeliefState,
+              candidate_output: candidateOutput,
+              recommendations: [],
+              risk_level: risk
+            })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const r = await res.json();
+          document.getElementById('epGateVerdict').innerHTML = r.pass ? '<strong style="color:var(--ok, #16a34a);">PASS</strong>' : ('<strong style="color:var(--err, #c0392b);">FAIL</strong> — ' + escapeHtml(r.reason || ''));
+          const checks = document.getElementById('epGateChecks');
+          checks.innerHTML = '';
+          (r.checks || []).forEach(c => {
+            const li = document.createElement('li');
+            li.innerHTML = (c.pass ? '✓ ' : '✗ ') + escapeHtml(c.question) + (c.detail ? ' — <em>' + escapeHtml(c.detail) + '</em>' : '');
+            li.style.color = c.pass ? 'var(--ok, #16a34a)' : 'var(--err, #c0392b)';
+            checks.appendChild(li);
+          });
+          const ap = document.getElementById('epAntiPatterns');
+          ap.innerHTML = '';
+          if (!(r.anti_patterns || []).length) {
+            ap.innerHTML = '<li style="color:var(--muted);">(none)</li>';
+          } else {
+            r.anti_patterns.forEach(h => {
+              const li = document.createElement('li');
+              li.innerHTML = '<strong>' + escapeHtml(h.name) + '</strong> (' + escapeHtml(h.section) + ') — ' + escapeHtml(h.detail);
+              ap.appendChild(li);
+            });
+          }
+          document.getElementById('epStatusBlock').textContent = r.epistemic_status_block || '(only rendered for medium/high risk)';
+          setEpStatus('gate ' + (r.pass ? 'pass' : 'fail') + ' — ' + (r.anti_patterns || []).length + ' anti-patterns, ' + (r.checks || []).length + ' checks');
+        } catch (e) {
+          setEpStatus('error: ' + e.message);
+        }
+      }
+
+      document.getElementById('epPlanBtn').addEventListener('click', runEpPlan);
+      document.getElementById('epGateBtn').addEventListener('click', runEpGate);
     });
   </script>
 </body>

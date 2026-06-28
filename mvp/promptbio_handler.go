@@ -99,6 +99,70 @@ func promptbioSimulateHandler(w http.ResponseWriter, r *http.Request) {
 	_ = enc.Encode(out)
 }
 
+// v0.7.35 — Issue 30 Epistemology & Truth Maintenance. Three endpoints:
+//   POST /api/promptbio/epistemology/plan   → full 16-section PromptEpistemologyPlan
+//   POST /api/promptbio/epistemology/gate   → runtime-gate verdict + anti-pattern hits
+//   POST /api/promptbio/epistemology/update → belief-update protocol (deprecate + propagate)
+func promptbioEpistemologyPlanHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req promptbio.PlanRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := promptbio.Plan(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioEpistemologyGateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req promptbio.GateRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := promptbio.RunGate(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioEpistemologyUpdateHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req promptbio.UpdateRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	out := promptbio.ApplyUpdate(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
 // v0.7.32 — Promptogenesis v0.2 Prompt Genome Diff HTTP surface.
 // See ingest-done/06-prompt-dna.md.done and handoff Section 6.4.
 func promptbioDiffHandler(w http.ResponseWriter, r *http.Request) {
