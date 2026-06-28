@@ -31,6 +31,35 @@ func promptbioMapHandler(w http.ResponseWriter, r *http.Request) {
 	_ = enc.Encode(out)
 }
 
+// v0.7.34 — Issue 03 Prompt Evolution Loop. Grows a population of
+// 14-locus PromptOrganisms from a single ancestor, scores across 3
+// canonical niches, selects via per-niche top-1 + global top-K,
+// iterates N generations, returns lineage tree + niche winners +
+// changelog. Deterministic given the seed.
+func promptbioEvolveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req promptbio.EvolveRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.AncestorPrompt == "" {
+		http.Error(w, "ancestor_prompt is required", http.StatusBadRequest)
+		return
+	}
+	out := promptbio.Evolve(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
 // v0.7.33 — Issue 07 substrate abstraction: promptbio Simulate.
 // Runs the same five core engine moves the biological side runs
 // (truncation, balanced, drift, OCS-like, introgression) over the

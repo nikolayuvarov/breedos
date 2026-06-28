@@ -7,6 +7,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.34] - 2026-06-28
+
+### Added — Issue 03 Prompt Evolution Loop
+
+Ships the v0.3 module per Issue 03 acceptance criteria. From a
+single ancestor prompt, grows a population of variants, scores
+across 3 canonical niches with anti-correlated weight profiles,
+selects per-niche specialists + global top-K, iterates N
+generations, and emits a lineage tree whose edges are
+content-addressed v0.2 mutation ledger entries. Closes
+`issues-promptbio/03-prompt-evolution-loop.md`. This release
+completes the **smallest end-to-end usable system** promised by the
+handoff (Mapper → Diff → Evolution Loop), with all three modules
+live on `/promptbio`.
+
+**Scope (v0.7.34 minimum viable):**
+
+- Synchronous endpoint — deterministic placeholder judge is fast
+  enough that the async `/start` + `/status` pattern (Issue 03
+  spec) is deferred to v0.4 when LLM-judge integration lands.
+- 3 canonical niches with **sparse, anti-correlated** weight
+  profiles: `core_breadth` (Task / Audience / Output / Constraint),
+  `epistemic_depth` (Context / Method / Epistemic / Validation),
+  `safety_first` (Safety / Constraint / Memory / Tool). A variant
+  tuned for one niche cannot dominate the others — that's the
+  property that produces niche specialists per acceptance criterion #2.
+- 4 mutation kinds reused from v0.2 vocabulary (addition / deletion
+  / substitution / amplification). The full 15+ operator catalogue
+  from v5.7 (with risk tiers + governance gates) is queued for v0.4+.
+
+**New in `mvp/promptbio/`:**
+
+- `evolution.go` — `Evolve(req EvolveRequest) EvolveResponse`.
+  Content-addressed `variantID` on (parent_id, generation, genome),
+  3 canonical niches, `nicheFitness` over per-locus weight maps,
+  `mutateRandomLocus` with bias toward addition at low statuses and
+  deletion at strong statuses, deterministic counter-based `RNGv`
+  (LCG, distinct from `math/rand` so determinism tests are
+  independent of Go internal state), `selectParentsForEvolve` (per-
+  niche top-1 + global top-K), `summarise` (mean / best / per-niche
+  winner / Pareto front per generation), `paretoFront` over (mean
+  fitness, robustness).
+- `evolution_test.go` — 6 new tests: determinism (same seed →
+  identical run_id, lineage, generation summaries); lineage tree
+  well-formedness (every non-root variant has ≥ 1 parent edge,
+  every edge has non-empty ledger_id); monotone mean-fitness
+  improvement across 5 generations; niche specialisation (≥ 1
+  niche specialist differs from global winner); canonical niches
+  present (3 niches with ≥ 3 weighted loci each); lineage ledger
+  ids content-addressed and ≥ 50% unique across edges.
+
+**HTTP surface:**
+
+- `POST /api/promptbio/evolve` (`mvp/promptbio_handler.go` —
+  `promptbioEvolveHandler`). Request: `{ancestor_prompt,
+  generations?, population_size?, selection_percent?,
+  mutation_strategy?, seed?}`. Response: full `EvolveResponse` with
+  `run_id`, `ancestor_genome` (from v0.1 mapper), `niches`,
+  `generations` (per-gen population with `id`, `parent_id`,
+  `genome`, `mutations_applied`, `fitness_per_niche`,
+  `mean_fitness`, `robustness`), `lineage` (parent → child edges
+  with content-addressed `ledger_id`), `changelog`,
+  `global_winner_id`, `final_niche_winners`, `summary_text`,
+  `honesty_banner`, `limitations`.
+- Bounds: generations ≤ 12, population 5–20, enforced server-side.
+- 400 on missing `ancestor_prompt`.
+
+**UI:**
+
+- New "Promptbio v0.3 — Prompt Evolution Loop" card on
+  `/promptbio` (below the Issue 07 Simulate card). 5-field form
+  (ancestor textarea + generations / population / selection % /
+  seed). Result cards: run summary, 3-niche specialist grid (each
+  niche card shows its winner id, niche fitness, "★ Also global
+  winner" or "⚑ Niche specialist (differs from global)" badge),
+  generation changelog table (Gen / Mean / Best / Best variant /
+  Pareto IDs), lineage edges sample table (Parent / Child / Locus
+  / Kind / Ledger id), honesty layer.
+
+**Acceptance criteria (Issue 03):**
+
+- ✅ #1 Monotone mean-fitness improvement — test
+  `TestEvolve_MonotoneMeanFitnessImprovement` asserts
+  `endMean > startMean` over 5 generations with seed 42.
+- ✅ #2 Niche specialists differ from global winner — test
+  `TestEvolve_NicheSpecialisation` asserts ≥ 1 niche specialist
+  differs from global; live smoke shows **all 3** niches with
+  different winners.
+- ✅ #3 Lineage tree well-formed — test
+  `TestEvolve_LineageTreeWellFormed` asserts every non-root
+  variant has ≥ 1 parent edge with non-empty ledger_id.
+- ✅ #4 Budget — synchronous endpoint completes 5 × 8 × 3 niches
+  in ~5ms locally; well within budget.
+- ✅ #5 Deterministic — test `TestEvolve_Deterministic` asserts
+  same seed → identical run_id, lineage, generation summaries.
+
+**Smoke (raw GTM → evolution, gen=4, pop=8, seed=42):**
+
+```
+run_id: r_0cd8286c0f657b2e
+3 niches with 3 distinct winners:
+  core_breadth    → v_72ac6a31897f (also global)
+  epistemic_depth → v_4d5e6e832baf (specialist)
+  safety_first    → v_f72b52ac6e4b (specialist)
+39 lineage edges, mean fitness 0.103 → 0.190 (monotone)
+```
+
+**Design decisions:**
+
+1. **Sparse, anti-correlated niches.** First draft had dense
+   per-niche weight maps (14 loci each, high-weight overlap). All 3
+   niches converged on the same variant. Redesigned to 3–4 locus
+   identities per niche with zero overlap on peak loci — this is
+   what makes niche specialisation a structural property of the
+   design rather than a happy accident.
+2. **Synchronous endpoint instead of `/start` + `/status`.** The
+   deterministic placeholder judge runs in microseconds per variant
+   per generation. Async pattern is queued behind LLM-judge.
+3. **4-kind mutation taxonomy instead of v5.7's 15+.** v0.3
+   minimum scope. v5.7's expanded catalogue with risk tiers and
+   governance gates is queued for v0.4 once Ecology / Immunology
+   land.
+4. **Counter-based LCG RNG instead of `math/rand`.** Determinism
+   tests pass independently of Go internal `math/rand` state
+   changes across versions.
+
+**Footer + version + CHANGELOG bumped to `v0.7.34`. Theory page
+roadmap row for v0.3 marked shipped.**
+
 ## [0.7.33] - 2026-06-28
 
 ### Added — Issue 07 substrate abstraction

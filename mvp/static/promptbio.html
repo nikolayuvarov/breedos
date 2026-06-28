@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff</title>
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop</title>
   <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
@@ -239,10 +239,82 @@
         <ul id="simWhatCouldBeWrong" style="margin:0 0 0 20px;"></ul>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid var(--warn);">
+      <div class="kicker">Promptbio v0.3 — Prompt Evolution Loop · v0.7.34</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Evolve a prompt family.</h2>
+      <p class="lede">
+        From a single ancestor prompt, grow a population of variants, score them across 3 canonical niches (Core breadth, Epistemic depth, Safety-first), select per-niche specialists + global top-K, iterate N generations, and emit a lineage tree whose edges carry content-addressed v0.2 mutation ledger entries.
+      </p>
+      <p class="note">
+        v0.3 v0.7.34 ships the deterministic core: placeholder judge, 4-kind mutation taxonomy (addition / deletion / substitution / amplification), synchronous endpoint. Real LLM-judge integration + 15-operator v5.7 catalogue + async /start + /status pattern are queued behind v0.4 Ecology.
+      </p>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 12px;">
+        <label style="font-size:13px;">Ancestor prompt
+          <textarea id="evoAncestor" style="min-height:80px;">Напиши хорошую стратегию запуска продукта.</textarea>
+        </label>
+        <label style="font-size:13px;">Generations
+          <input id="evoGen" type="number" value="5" min="1" max="12" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Population size
+          <input id="evoPop" type="number" value="8" min="5" max="20" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Selection %
+          <input id="evoSel" type="number" value="0.35" min="0.10" max="0.80" step="0.05" style="width:100%;">
+        </label>
+        <label style="font-size:13px;">Seed
+          <input id="evoSeed" type="number" value="42" style="width:100%;">
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="evoBtn" class="btn primary" type="button">Run evolution</button>
+        <span id="evoStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="evoResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Run summary</h2>
+        <p id="evoSummary" style="margin:6px 0; color:var(--text);"></p>
+        <p id="evoBanner" class="note" style="margin:6px 0; color:var(--muted); font-size:12px;"></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Niche specialists (final generation)</h2>
+        <p class="note" style="margin-top:0;">Each niche is a different per-locus weight profile. A specialist in one niche may not be globally best — that's exactly the point.</p>
+        <div id="evoNicheGrid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Generation changelog</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Gen</th><th>Mean fitness</th><th>Best</th><th>Best variant</th><th>Pareto front</th></tr></thead>
+            <tbody id="evoChangelog"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Lineage edges (sample)</h2>
+        <p class="note" style="margin-top:0;">Each row is one parent → child mutation. Ledger id is content-addressed (<code>sha256(locus | kind | after_fragment)</code>) and stable across runs.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Parent</th><th>Child</th><th>Locus</th><th>Kind</th><th>Ledger id</th></tr></thead>
+            <tbody id="evoLineage"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Honesty layer</h2>
+        <ul id="evoLimitations" style="margin:0 0 0 20px;"></ul>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.33 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate Abstraction. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.34 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -543,6 +615,86 @@
         document.getElementById('descendantInput').value = STRUCTURED_EXAMPLE;
       });
       document.getElementById('simBtn').addEventListener('click', runSimulate);
+
+      // ─── v0.3 Evolution Loop ────────────────────────────────────────────
+      function setEvoStatus(t) { document.getElementById('evoStatus').textContent = t || ''; }
+
+      function renderEvo(resp) {
+        document.getElementById('evoSummary').textContent = resp.summary_text || '';
+        document.getElementById('evoBanner').textContent = resp.honesty_banner || '';
+
+        const niches = resp.niches || [];
+        const winners = resp.final_niche_winners || {};
+        const finalGen = (resp.generations && resp.generations.length) ? resp.generations[resp.generations.length - 1] : [];
+        const byId = Object.fromEntries(finalGen.map(v => [v.id, v]));
+        document.getElementById('evoNicheGrid').innerHTML = niches.map(n => {
+          const wid = winners[n.code];
+          const v = byId[wid];
+          const fit = v && v.fitness_per_niche ? v.fitness_per_niche[n.code] : 0;
+          const isGlobal = wid === resp.global_winner_id;
+          return `<div style="border:1px solid var(--line); border-radius:8px; padding:10px;">
+            <div style="font-weight:700;">${escapeHtml(n.name)}</div>
+            <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">${escapeHtml(n.description || '')}</div>
+            <div><code>${escapeHtml(wid || '?')}</code></div>
+            <div style="margin-top:4px;"><strong>fitness in this niche:</strong> ${fit.toFixed(3)}</div>
+            ${isGlobal ? '<div style="margin-top:4px; color:var(--ok); font-size:12px;">★ Also global winner</div>' : '<div style="margin-top:4px; color:var(--warn); font-size:12px;">⚑ Niche specialist (differs from global)</div>'}
+          </div>`;
+        }).join('');
+
+        const tbody = document.getElementById('evoChangelog');
+        tbody.innerHTML = (resp.changelog || []).map(g => `
+          <tr>
+            <td>${g.generation}</td>
+            <td>${g.mean_fitness.toFixed(3)}</td>
+            <td>${g.best_fitness.toFixed(3)}</td>
+            <td><code>${escapeHtml(g.best_variant_id || '')}</code></td>
+            <td><small style="color:var(--muted);">${(g.pareto_ids || []).join(', ')}</small></td>
+          </tr>
+        `).join('');
+
+        const lin = (resp.lineage || []).slice(0, 30);
+        document.getElementById('evoLineage').innerHTML = lin.map(e => `
+          <tr>
+            <td><code>${escapeHtml(e.parent_id)}</code></td>
+            <td><code>${escapeHtml(e.child_id)}</code></td>
+            <td><code>${escapeHtml(e.locus)}</code></td>
+            <td><span class="kind-badge ${escapeHtml(e.kind)}">${escapeHtml(e.kind)}</span></td>
+            <td><code style="font-size:11px; color:var(--muted);">${escapeHtml(e.ledger_id)}</code></td>
+          </tr>
+        `).join('') + ((resp.lineage || []).length > 30 ? `<tr><td colspan="5"><em style="color:var(--muted);">+ ${(resp.lineage || []).length - 30} more edges</em></td></tr>` : '');
+
+        document.getElementById('evoLimitations').innerHTML = (resp.limitations || []).map(l => '<li>' + escapeHtml(l) + '</li>').join('');
+        document.getElementById('evoResultCard').hidden = false;
+      }
+
+      async function runEvolve() {
+        const body = {
+          ancestor_prompt:   document.getElementById('evoAncestor').value || '',
+          generations:       parseInt(document.getElementById('evoGen').value, 10),
+          population_size:   parseInt(document.getElementById('evoPop').value, 10),
+          selection_percent: parseFloat(document.getElementById('evoSel').value),
+          seed:              parseInt(document.getElementById('evoSeed').value, 10),
+        };
+        if (!body.ancestor_prompt.trim()) { setEvoStatus('error: ancestor_prompt is required.'); return; }
+        setEvoStatus('evolving (' + body.generations + ' generations × ' + body.population_size + ' variants)...');
+        try {
+          const res = await fetch('/api/promptbio/evolve', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(t || ('HTTP ' + res.status));
+          }
+          const data = await res.json();
+          renderEvo(data);
+          setEvoStatus('done — global winner: ' + (data.global_winner_id || '?') + ', ' + (data.lineage || []).length + ' lineage edges');
+        } catch (e) {
+          setEvoStatus('error: ' + e.message);
+        }
+      }
+      document.getElementById('evoBtn').addEventListener('click', runEvolve);
     });
   </script>
 </body>
