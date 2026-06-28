@@ -115,9 +115,10 @@ func detectLocus(name LocusName, prompt, lower string) (LocusStatus, string) {
 		if w := firstMatch(lower, []string{
 			"write", "build", "create", "plan", "design", "explain",
 			"summarise", "summarize", "analyse", "analyze", "propose",
-			"draft", "produce", "outline",
+			"draft", "produce", "outline", "output the", "deliver",
 			"напиши", "сделай", "построй", "спроектируй", "объясни",
 			"проанализируй", "предложи", "составь", "разработай",
+			"выведи", "выдай",
 		}); w != "" {
 			// "Strong" requires an explicit deliverable noun nearby.
 			if containsAny(lower, []string{

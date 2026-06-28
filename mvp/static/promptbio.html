@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology</title>
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff + v0.3 Evolution Loop + v2.7 Epistemology + v1.3 Eval Lab</title>
   <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
@@ -389,10 +389,109 @@ user Actually, I meant the team tier, not pro.</textarea>
         <details><summary style="cursor:pointer;">PSL <code>epistemology:</code> block</summary><pre id="epPSLBlock" style="background:#0b0f14; color:#cdd6f4; padding:10px; border-radius:6px; font-size:12px; overflow-x:auto;"></pre></details>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid #6366f1;">
+      <div class="kicker">Promptbio v1.3 — Prompt Evaluation Lab · v0.7.36 (Issue 16)</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Prove the new prompt is actually better.</h2>
+      <p class="lede">
+        Run the candidate through 10 test types × 9 environments × 8 specialised judges. The score matrix tells you where it wins; the reaction norm tells you where it breaks; the ablation tells you which modules earn their place; the regression report tells you what improved and what got worse; the decision engine emits one of <code>accept</code> / <code>accept_as_specialist</code> / <code>reject</code> / <code>split_into_profiles</code> / <code>mutate_again</code>.
+      </p>
+      <p class="note">
+        v0.7.36 ships a deterministic genome-map-driven judging stack so the canonical P₀ → P₁.₁ → P₁.₂ ladder is reproducible. Real LLM-as-judge integration lands with v1.4 Runtime. <code>F_net = F_quality − λ·Cost</code>.
+      </p>
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px;">
+        <label style="font-size:13px;">Target prompt (P_new)
+          <textarea id="elTarget" style="min-height:140px;"># GTM Product Launch Strategy — v1.2
+
+ROLE: senior GTM strategist.
+AUDIENCE: founder + 6-person team; budget $250k.
+CONSTRAINTS: must respect budget; team size 6; GDPR.
+METHOD: step 1 segment; step 2 channel; step 3 experiments; step 4 metrics; step 5 risks.
+EPISTEMIC: separate facts / assumptions / unknowns. Not legal advice.
+OUTPUT SCHEMA: numbered sections 1..7.
+VALIDATION: before answering, verify every action is constraint-feasible.
+UX: short summary first.
+
+Output the launch strategy.</textarea>
+        </label>
+        <label style="font-size:13px;">Ancestor prompt (P_old, optional)
+          <textarea id="elAncestor" style="min-height:140px;">Напиши хорошую стратегию запуска продукта.</textarea>
+        </label>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap:10px; margin-top:10px;">
+        <label style="font-size:13px;">Task family
+          <select id="elFamily">
+            <option value="gtm_product_launch" selected>gtm_product_launch</option>
+            <option value="coding_prompt">coding_prompt</option>
+            <option value="research_prompt">research_prompt</option>
+            <option value="teaching_prompt">teaching_prompt</option>
+          </select>
+        </label>
+        <label style="font-size:13px;">Cost λ
+          <input id="elLambda" type="number" value="0.1" min="0" max="2" step="0.05">
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="elRunBtn" class="btn primary" type="button">Run evaluation</button>
+        <span id="elStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="elResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Deployment decision</h2>
+        <p style="margin:6px 0;"><strong id="elVerdictBadge" style="padding:4px 10px; border-radius:4px; color:white;">verdict</strong> &nbsp; <span id="elVerdictRationale" style="font-size:13px; color:var(--muted);"></span></p>
+        <p style="margin:6px 0;"><strong>F_quality:</strong> <span id="elFQ"></span> &nbsp; <strong>F_net:</strong> <span id="elFN"></span> &nbsp; <span style="font-size:12px; color:var(--muted);">(F_net = F_quality − λ·Cost)</span></p>
+        <p id="elCritical" style="margin:6px 0; color:var(--err, #c0392b); font-size:13px;"></p>
+        <p id="elNiche" style="margin:6px 0; font-size:13px; color:var(--muted);"></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Score matrix (mean per environment)</h2>
+        <p class="note" style="margin-top:0;">Geometric mean of 8 judges across the seeded test bank, per environment. Critical failure column flags injection / drift / constraint_leakage misses.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Env</th><th>Mean score</th><th>Pass rate</th><th>Critical?</th></tr></thead>
+          <tbody id="elMatrix"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Reaction norm (per-trait stability across environments)</h2>
+        <p class="note" style="margin-top:0;">Stable: variance &lt; 0.04. Floating: variance ≥ 0.04. Niche fit: <strong id="elNicheFit"></strong></p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Trait (judge)</th><th>Mean</th><th>Variance</th><th>Worst env</th><th>Worst score</th></tr></thead>
+          <tbody id="elNorm"></tbody>
+        </table></div>
+      </div>
+
+      <div id="elRegressionCard" class="card" style="margin-bottom:18px;" hidden>
+        <h2 style="margin-top:0; font-size:22px;">Regression report (P_old → P_new)</h2>
+        <p style="margin:6px 0;"><strong>Verdict:</strong> <span id="elRegVerdict"></span></p>
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:10px;">
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--ok, #16a34a);">Improved</h3><ul id="elRegImproved" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--err, #c0392b);">Degraded</h3><ul id="elRegDegraded" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+          <div><h3 style="margin:0 0 6px; font-size:14px; color:var(--warn, #d97706);">New risks</h3><ul id="elRegRisks" style="margin:0 0 0 20px; font-size:13px;"></ul></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Ablation plan</h2>
+        <p class="note" style="margin-top:0;">Knock out each module; if removing it costs &gt; 0.05 in mean score, keep it.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Module</th><th>Expected loss</th><th>Actual loss</th><th>Keep?</th></tr></thead>
+          <tbody id="elAblation"></tbody>
+        </table></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Next mutations</h2>
+        <ol id="elMutations" style="margin:0 0 0 20px;"></ol>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.35 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.36 — Promptbio v0.1 Mapper + v0.2 Diff + Issue 07 Substrate + v0.3 Evolution Loop + v2.7 Epistemology &amp; TMS + v1.3 Eval Lab. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -921,6 +1020,105 @@ user Actually, I meant the team tier, not pro.</textarea>
 
       document.getElementById('epPlanBtn').addEventListener('click', runEpPlan);
       document.getElementById('epGateBtn').addEventListener('click', runEpGate);
+
+      function setElStatus(t) { document.getElementById('elStatus').textContent = t; }
+
+      const verdictColors = {
+        accept: '#16a34a',
+        accept_as_specialist: '#2563eb',
+        reject: '#c0392b',
+        split_into_profiles: '#7c3aed',
+        mutate_again: '#d97706'
+      };
+
+      async function runEvalLab() {
+        setElStatus('running evaluation…');
+        try {
+          const res = await fetch('/api/promptbio/eval/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              target_prompt: document.getElementById('elTarget').value,
+              ancestor_prompt: document.getElementById('elAncestor').value || '',
+              task_family: document.getElementById('elFamily').value,
+              cost_lambda: parseFloat(document.getElementById('elLambda').value) || 0.1
+            })
+          });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const r = await res.json();
+          renderEvalLab(r);
+          setElStatus('done — F_quality ' + (r.f_quality || 0).toFixed(3) + ' · ' + r.deployment.verdict);
+        } catch (e) {
+          setElStatus('error: ' + e.message);
+        }
+      }
+
+      function renderEvalLab(r) {
+        document.getElementById('elResultCard').hidden = false;
+        const badge = document.getElementById('elVerdictBadge');
+        badge.textContent = r.deployment.verdict;
+        badge.style.background = verdictColors[r.deployment.verdict] || '#6b7280';
+        document.getElementById('elVerdictRationale').textContent = r.deployment.rationale || '';
+        document.getElementById('elFQ').textContent = (r.f_quality || 0).toFixed(3);
+        document.getElementById('elFN').textContent = (r.f_net || 0).toFixed(3);
+        document.getElementById('elCritical').textContent = (r.deployment.critical_failures || []).length ? '⚠ critical failures: ' + r.deployment.critical_failures.join('; ') : '';
+        document.getElementById('elNiche').textContent = r.deployment.niche_scoping ? 'niche scoping: ' + r.deployment.niche_scoping : '';
+
+        const tbody = document.getElementById('elMatrix');
+        tbody.innerHTML = '';
+        (r.env_results || []).forEach(er => {
+          const tr = document.createElement('tr');
+          const passes = (er.test_results || []).filter(t => t.pass).length;
+          const total = (er.test_results || []).length;
+          const crit = (er.test_results || []).filter(t => !t.pass && (t.test_type === 'prompt_injection' || t.test_type === 'drift' || t.test_type === 'constraint_leakage')).length;
+          tr.innerHTML = `<td><code>${escapeHtml(er.env)}</code></td><td>${er.mean_score.toFixed(3)}</td><td>${passes}/${total}</td><td style="${crit ? 'color:var(--err, #c0392b)' : ''}">${crit ? '✗ ' + crit : '✓'}</td>`;
+          tbody.appendChild(tr);
+        });
+
+        document.getElementById('elNicheFit').textContent = r.reaction_norm.niche_fit || '?';
+        const norm = document.getElementById('elNorm');
+        norm.innerHTML = '';
+        Object.values(r.reaction_norm.per_trait || {}).forEach(t => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${escapeHtml(t.trait)}</td><td>${t.mean_score.toFixed(3)}</td><td>${t.variance.toFixed(3)}</td><td><code>${escapeHtml(t.worst_env || '')}</code></td><td>${t.worst_score.toFixed(3)}</td>`;
+          norm.appendChild(tr);
+        });
+
+        const regCard = document.getElementById('elRegressionCard');
+        if (r.regression) {
+          regCard.hidden = false;
+          document.getElementById('elRegVerdict').textContent = r.regression.decision || '';
+          const fillList = (id, items) => {
+            const ul = document.getElementById(id);
+            ul.innerHTML = '';
+            if (!items || !items.length) { ul.innerHTML = '<li style="color:var(--muted);">(none)</li>'; return; }
+            items.forEach(s => { const li = document.createElement('li'); li.textContent = s; ul.appendChild(li); });
+          };
+          fillList('elRegImproved', r.regression.improved);
+          fillList('elRegDegraded', r.regression.degraded);
+          fillList('elRegRisks', r.regression.new_risks);
+        } else {
+          regCard.hidden = true;
+        }
+
+        const abl = document.getElementById('elAblation');
+        abl.innerHTML = '';
+        (r.ablation.rows || []).forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td><code>${escapeHtml(row.module)}</code></td><td>${escapeHtml(row.expected_loss)}</td><td>${row.actual_loss.toFixed(3)}</td><td>${row.keep ? '<strong style="color:var(--ok, #16a34a);">KEEP</strong>' : '<span style="color:var(--muted);">remove</span>'}</td>`;
+          abl.appendChild(tr);
+        });
+
+        const muts = document.getElementById('elMutations');
+        muts.innerHTML = '';
+        (r.next_mutations || []).forEach(m => {
+          const li = document.createElement('li');
+          li.innerHTML = `<strong>${escapeHtml(m.kind)}</strong> at <code>${escapeHtml(m.target_locus)}</code> — ${escapeHtml(m.rationale)}`;
+          muts.appendChild(li);
+        });
+      }
+
+      document.getElementById('elRunBtn').addEventListener('click', runEvalLab);
     });
   </script>
 </body>

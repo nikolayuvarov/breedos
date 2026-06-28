@@ -7,8 +7,10 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"breedos-mvp/promptbio"
+	"breedos-mvp/promptbio/eval"
 )
 
 func promptbioMapHandler(w http.ResponseWriter, r *http.Request) {
@@ -97,6 +99,66 @@ func promptbioSimulateHandler(w http.ResponseWriter, r *http.Request) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)
+}
+
+// v0.7.36 — Issue 16 v1.3 Prompt Evaluation Lab. Two endpoints:
+//   POST /api/promptbio/eval/run        → full EvaluationLabReport (13 sections)
+//   POST /api/promptbio/eval/regression → pairwise ancestor↔descendant regression report
+//
+// Real LLM-as-judge integration is queued for v1.4; v0.7.36 ships a
+// deterministic genome-map-driven judging stack so the ladder
+// P₀ raw → P₁.₁ engineered → P₁.₂ compiled is reproducible.
+func promptbioEvalRunHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req eval.EvalRunRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.TargetPrompt) == "" {
+		http.Error(w, "target_prompt is required", http.StatusBadRequest)
+		return
+	}
+	out := eval.Run(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
+func promptbioEvalRegressionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req eval.RegressionRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.AncestorPrompt == "" || req.DescendantPrompt == "" {
+		http.Error(w, "ancestor_prompt and descendant_prompt are required", http.StatusBadRequest)
+		return
+	}
+	out := eval.Run(eval.EvalRunRequest{
+		TargetPrompt:   req.DescendantPrompt,
+		AncestorPrompt: req.AncestorPrompt,
+		TaskFamily:     req.TaskFamily,
+		CostLambda:     0.1,
+	})
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out.Regression)
 }
 
 // v0.7.35 — Issue 30 Epistemology & Truth Maintenance. Three endpoints:

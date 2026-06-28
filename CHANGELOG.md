@@ -7,6 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.36] - 2026-06-28
+
+### Added — Issue 16 Promptbio v1.3 Prompt Evaluation Lab
+
+Closes `issues-promptbio/16-prompt-evaluation-lab.md`. Answers the
+gating question "is this prompt actually better than its ancestor?"
+with measurement instead of vibes.
+
+**Core formulas land verbatim:**
+
+- `F_system(P, E, T) = Score(Y = Run(P, E, T))`
+- `F(P) = E[Score(Y)]`
+- `Robustness(P) = 1 − Var(Score(Y))`
+- `F_net = F_quality − λ·Cost`
+
+**Test bank.** 10-test seed bank covering every §4 type
+(`clean / sparse / noisy_context / conflict / prompt_injection /
+constraint_leakage / format_stability / drift / overconfidence /
+reproduction`) with one verbatim §15 GTM Product Launch case per type.
+
+**Fitness functions.** §15 9-metric GTM Product Launch rubric
+verbatim — weights `realism 0.18, specificity 0.15, actionability
+0.15, constraint_fit 0.12, experiment_quality 0.10, measurability
+0.10, risk_awareness 0.08, value_clarity 0.07, uncertainty_handling
+0.05` (sum = 1.0) with per-level descriptors. Coding (`correctness
+0.35`, `executability 0.20`, `edge_cases 0.15`, `security 0.10`,
+`maintainability 0.10`, `clarity 0.05`, `efficiency 0.05`), research,
+and teaching rubrics also catalogued.
+
+**Eight-judge ensemble.** `format_judge / factual_judge /
+constraint_judge / utility_judge / risk_judge / style_judge /
+efficiency_judge / regression_judge` (§6 deterministic heuristic
+versions over the v0.1 Mapper genome). Aggregator is geometric mean
+so a single dominating judge cannot drown out a weakness on another
+axis. Real LLM-as-judge integration queued for v1.4 Runtime.
+
+**Harness.** Every (prompt, env, test) combination runs across 9
+environments (`clean / sparse / noisy / conflicting / long_context /
+high_temperature / tool_rich / tool_poor / different_model`). Score
+matrix surfaces per-env mean + robustness + critical-failure column.
+
+**Reaction norm.** Per-trait variance + worst-env + niche-fit verdict
+(`broad / moderate / specialist / narrow`). Stable trait: variance < 0.04.
+
+**Regression detector.** §11 verbatim template (`Improved / Degraded
+/ Unchanged / New risks / Decision`). Safety boundary, constraint,
+validation locus regressions promoted to first-class new risks.
+
+**Ablation runner.** §13 knock-out for `immune_protocol /
+metabolic_protocol / homeostatic_controller / reproduction_module /
+long_style_rules` with `Keep?` = loss > 0.05.
+
+**Cost telemetry.** Prompt length, output estimate, tool calls,
+latency, slot-filling burden, user burden, maintenance complexity,
+test count, dependency count → normalised single scalar for
+`F_net = F_quality − λ·Cost`.
+
+**Decision engine (§17).** Five verdicts: `accept /
+accept_as_specialist / reject / split_into_profiles / mutate_again`.
+Hard rules:
+
+- clean-pass + injection/drift/constraint_leakage-fail → never accept
+  (only specialist with explicit niche scoping, or mutate_again)
+- F_quality < 0.45 → reject
+- F_net < 0.40 with cost λ > 0 → mutate_again
+- F_quality < 0.60 → accept_as_specialist
+
+**API.** Two new POST endpoints under `/api/promptbio/eval/`:
+
+- `/run` — full EvaluationLabReport with all 13 §18 sections.
+- `/regression` — pairwise ancestor↔descendant regression report.
+
+**UI.** Evaluation Lab card on `/promptbio` with target/ancestor
+textareas, task-family + cost-λ knobs, deployment-decision badge
+with rationale + critical failures + niche scoping, score-matrix
+table, reaction-norm table with per-trait variance + worst env +
+niche fit verdict, regression Improved/Degraded/New risks columns,
+ablation table with Keep? decisions, ranked next-mutations list.
+
+**Tests.** 12 new tests in `breedos/mvp/promptbio/eval/lab_test.go`:
+
+- §16 ladder reproduction — P₀ raw rejected; P₁.₁ engineered
+  ladder-monotone; P₁.₂ compiled accepted
+- GTM rubric weights verbatim (9 metrics, sum = 1.0)
+- Bank covers all 10 §4 test types
+- Clean-pass + injection/safety-fail prompt → not accept (acceptance
+  criterion 4)
+- F_net surfaced
+- Regression report non-empty when ancestor differs
+- Nine environments in the reaction norm
+- All 5 ablation modules with Keep? decisions
+- JSON round-trip
+- Deterministic across re-runs
+
+**Mapper hardening.** The v0.1 Mapper task-locus detector gains
+`output the / deliver / выведи / выдай` cues so compiled prompts
+ending with `Output the …` are no longer flagged as missing the
+task locus (was driving false drift failures in the Eval Lab).
+
+Biological simulation path bit-identical to v0.7.35.
+
 ## [0.7.35] - 2026-06-28
 
 ### Added — Issue 30 Promptbio v2.7 Epistemology & Truth Maintenance
