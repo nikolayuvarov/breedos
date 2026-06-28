@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.32] - 2026-06-28
+
+### Added — Promptbio v0.2 Prompt Genome Diff
+
+Ships the second Promptogenesis module, mirroring the v0.1 mapper
+discipline (static, deterministic, no LLM, bilingual). Closes
+`issues-promptbio/02-prompt-genome-diff.md`.
+
+**Scope:** static-heuristic diff over the 14-locus vector emitted by
+v0.1 — cosmetic rewording yields ΔG ≈ 0 because diffs live at the
+genotype layer, not the text layer. Operates on the existing
+`promptbio` subpackage; the biological BreedOS path stays
+bit-identical.
+
+**New in `mvp/promptbio/`:**
+
+- `diff.go` — `DiffPrompts(req DiffRequest) PromptDiff`. Walks the
+  14-locus map for ancestor + descendant, classifies each
+  status transition into one of the six handoff-Section-6.4 mutation
+  kinds (`addition` / `deletion` / `substitution` / `amplification` /
+  `suppression` / `modularization`), computes a locus-weighted ΔG
+  (Task / Constraint / Output_schema carry 1.5×; Tool / Memory 0.7×;
+  UX / Evolution 0.5×; others 1.0×), projects a 7-axis ΔZ
+  (structure / depth / accuracy / concreteness / style / usefulness
+  / risks ∈ [-2, +2]) from locus deltas, and surfaces regressions
+  (lost present/strong loci) + new risks (safety/validation weakened,
+  conflicts introduced).
+- Content-addressed mutation ledger: `ledger_id = "m_" + sha256(locus
+  | kind | after_fragment)[:8]`, stable across runs. v0.3 Evolution
+  Loop will reference these ids on lineage edges so identical
+  mutations across branches deduplicate.
+- ΔF is `null` with the honest `delta_f_explanation` `"no
+  target_phenotype supplied; ΔF deferred to v0.3 fitness battery"`
+  — v0.2 deliberately doesn't fabricate a fitness number without a
+  target.
+- Next-mutation suggestion picks the highest-leverage missing locus
+  in the descendant (priority: Task → Constraint → Output → Epistemic
+  → Validation → Context → Method → Audience → Role → Safety).
+- `diff_test.go` — 11 tests: identical-input zero-delta; cosmetic-
+  reword near-zero; raw→structured ≥ 0.3 ΔG with ≥ 3 additions and
+  descendant score > ancestor; structured→raw ≥ 1 regression with
+  ≥ 3 deletions; ledger-id stability across runs; ledger-id
+  distinguishes locus + kind + fragment (4 unique on permutations);
+  ΔF nil with explanation when no target; safety-locus deletion
+  emits `new_risks` entry; next mutation prioritises core loci;
+  phenotype-shift axes bounded in [-2, 2] and raw→structured shifts
+  are non-negative on depth/accuracy/structure; JSON round-trip
+  stability.
+
+**HTTP surface:**
+
+- `POST /api/promptbio/diff` (`mvp/promptbio_diff_handler.go` —
+  small wrapper next to the v0.1 map handler). Request: `{ancestor,
+  descendant, language?, species_hint?}`. Response: full
+  `PromptDiff` with `diff_id`, ancestor + descendant genomes,
+  `genomic_diff`, `mutation_ledger`, `delta_g`, `delta_z`,
+  `delta_f` (nullable), `regressions`, `new_risks`,
+  `next_mutation_suggestion`.
+- Empty-input validation: `400 ancestor and descendant are required`
+  if either is blank.
+
+**UI:**
+
+- New "Promptbio v0.2 — Prompt Genome Diff" card on `/promptbio`
+  below the existing v0.1 Mapper card. Two textareas (Ancestor /
+  Descendant) + Compare button + load-raw→structured example
+  button. Results: ΔG pill (low/mid/high band), ancestor → descendant
+  genome-score shift line, 7-axis ΔZ chips (colour-coded
+  positive/negative/neutral), 14-row mutation-ledger table with
+  colour-coded `kind` badges and short `ledger_id` display,
+  regressions list, new-risks list, single highest-leverage next
+  mutation card.
+- Nav stays on the same page — no separate `/promptbio-diff`
+  route — so the operator can run map → diff → map without
+  navigation.
+
+**Footer + version + CHANGELOG bumped to `v0.7.32`.**
+
 ## [0.7.31] - 2026-06-27
 
 ### Added — Promptbio v0.1 Prompt Genome Mapper
@@ -76,10 +154,11 @@ path is bit-identical.
 **Ingest lifecycle:**
 
 - 77 source files digested in one cycle:
-  `ingest/00..76-prompt-dna.md` + `handoff-dna-prompt.md` →
-  `ingest-done/<name>.md.done`. The handoff is the canonical
-  distillation; the 76 numbered files behind it are the
-  conversational substrate.
+  `ingest/00..42-prompt-dna.md`, `ingest/44..76-prompt-dna.md`,
+  and `handoff-dna-prompt.md` → `ingest-done/<name>.md.done`.
+  Numeric slot 43 was absent in the source batch. The handoff is
+  the canonical distillation; the 76 numbered files behind it are
+  the conversational substrate.
 - `issues-promptbio/00-README.md` updated to call out the handoff
   as primary reading.
 - `issues-promptbio/01-prompt-genome-mapper.md` →

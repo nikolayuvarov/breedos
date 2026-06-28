@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BreedOS Promptbio — v0.1 Prompt Genome Mapper</title>
-  <meta name="description" content="Static analyzer for prompts: decompose a raw prompt into 14 functional loci, surface missing genes, predict likely failure modes, and propose a mutation plan.">
+  <title>BreedOS Promptbio — v0.1 Mapper + v0.2 Diff</title>
+  <meta name="description" content="Static analyzer + diff for prompts: decompose a prompt into 14 functional loci, score it, compare two versions, surface gene changes, regressions, and a content-addressed mutation ledger.">
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
   <style>
-    .promptbio textarea { width: 100%; min-height: 160px; background: #081013; border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+    .promptbio textarea { width: 100%; min-height: 140px; background: #081013; border: 1px solid var(--line); color: var(--text); border-radius: 12px; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
     .promptbio .gscore-pill { display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid; font-weight: 700; }
     .promptbio .gscore-pill.low { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.08); }
     .promptbio .gscore-pill.mid { color: var(--warn); border-color: var(--warn); background: rgba(255,211,140,0.08); }
@@ -23,6 +23,19 @@
     .promptbio .status-badge.strong { color: var(--ok); border-color: var(--ok); background: rgba(185,255,189,0.08); }
     .promptbio .status-badge.conflicting { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.14); }
     .promptbio .status-badge.not_applicable { color: var(--muted); border-color: var(--muted); background: rgba(155,177,173,0.06); }
+    .promptbio .kind-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; border: 1px solid; }
+    .promptbio .kind-badge.addition       { color: var(--ok);     border-color: var(--ok);     background: rgba(185,255,189,0.10); }
+    .promptbio .kind-badge.deletion       { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.10); }
+    .promptbio .kind-badge.amplification  { color: var(--ok);     border-color: var(--ok);     background: rgba(185,255,189,0.06); }
+    .promptbio .kind-badge.suppression    { color: var(--warn);   border-color: var(--warn);   background: rgba(255,211,140,0.10); }
+    .promptbio .kind-badge.substitution   { color: var(--accent2); border-color: var(--accent2); background: rgba(140,183,255,0.08); }
+    .promptbio .kind-badge.modularization { color: var(--accent2); border-color: var(--accent2); background: rgba(140,183,255,0.14); }
+    .promptbio .delta-pill { display: inline-flex; align-items: baseline; gap: 4px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; font-weight: 700; }
+    .promptbio .delta-pos { color: var(--ok);     border-color: var(--ok);     background: rgba(185,255,189,0.08); }
+    .promptbio .delta-neg { color: var(--danger); border-color: var(--danger); background: rgba(255,154,154,0.08); }
+    .promptbio .delta-neu { color: var(--muted);  border-color: var(--line); }
+    .promptbio .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 720px) { .promptbio .two-col { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -91,10 +104,75 @@
         <ol id="testsToRun" style="margin:0 0 0 20px; padding:0; color:var(--text);"></ol>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:18px; border-top: 2px solid var(--accent2);">
+      <div class="kicker">Promptbio v0.2 — Prompt Genome Diff</div>
+      <h2 style="margin:8px 0 6px; font-size:26px;">Compare two prompts.</h2>
+      <p class="lede">
+        Paste an ancestor and a descendant prompt. The diff computes a content-addressed mutation ledger over the 14-locus vector, classifies each change into one of six mutation kinds, projects a 7-axis phenotype shift, and flags regressions and new risks. Cosmetic rewording yields ΔG ≈ 0 — diffs live at the genotype layer, not the text layer.
+      </p>
+      <div class="two-col">
+        <div>
+          <label for="ancestorInput" style="display:block; font-weight:700; margin-bottom:6px;">Ancestor (P₀)</label>
+          <textarea id="ancestorInput" placeholder="Paste the prior version."></textarea>
+        </div>
+        <div>
+          <label for="descendantInput" style="display:block; font-weight:700; margin-bottom:6px;">Descendant (P₁)</label>
+          <textarea id="descendantInput" placeholder="Paste the rewritten version."></textarea>
+        </div>
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-top:10px;">
+        <button id="diffBtn" class="btn primary" type="button">Compare</button>
+        <button id="diffExampleBtn" class="btn" type="button">Load raw → structured example</button>
+        <span id="diffStatus" style="font-size:13px; color:var(--muted);"></span>
+      </div>
+    </div>
+
+    <div id="diffResultCard" hidden>
+      <div class="card" style="margin-bottom:18px;">
+        <div style="display:flex; align-items:baseline; gap:14px; flex-wrap:wrap;">
+          <h2 style="margin:0; font-size:22px;">ΔG (genomic distance)</h2>
+          <span id="deltaGPill" class="gscore-pill mid">0.00</span>
+          <small id="diffIdLabel" style="color:var(--muted);"></small>
+        </div>
+        <p style="margin-top:10px; color:var(--text);">
+          <span id="scoreShiftLine"></span>
+        </p>
+        <p style="margin-top:4px; color:var(--muted); font-size:13px;" id="deltaFLine"></p>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">ΔZ (predicted phenotype shift)</h2>
+        <p class="note" style="margin-top:0;">Each axis is the heuristic projection from locus-status changes onto the 7-axis phenotype model. Range [-2, +2]; zero means no predicted change.</p>
+        <div id="deltaZGrid" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Mutation ledger — genomic diff</h2>
+        <p class="note" style="margin-top:0;">Content-addressed (<code>ledger_id = sha256(locus | kind | after_fragment)</code>). v0.3 Evolution Loop will reference these ids in lineage edges.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Locus</th><th>Kind</th><th>Before</th><th>After</th><th>Rationale</th><th>Ledger id</th></tr></thead>
+            <tbody id="ledgerTable"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Regressions &amp; new risks</h2>
+        <div id="regressionList"></div>
+        <div id="newRisksList" style="margin-top:10px;"></div>
+      </div>
+
+      <div class="card" style="margin-bottom:18px;">
+        <h2 style="margin-top:0; font-size:22px;">Next single highest-leverage mutation</h2>
+        <div id="nextMutation"></div>
+      </div>
+    </div>
   </main>
 
   <footer class="footer">
-    <div class="wrap">BreedOS MVP v0.7.31 — Promptbio v0.1 Prompt Genome Mapper. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
+    <div class="wrap">BreedOS MVP v0.7.32 — Promptbio v0.1 Mapper + v0.2 Diff. <a href="https://github.com/NikolayUvarov/breedos">View source on GitHub</a>.</div>
   </footer>
 
   <script>
@@ -180,6 +258,108 @@
       }
     }
 
+    // ─── v0.2 Diff ─────────────────────────────────────────────────────────
+
+    function setDiffStatus(text) {
+      const el = document.getElementById('diffStatus');
+      if (el) el.textContent = text || '';
+    }
+
+    function bandForDeltaG(d) {
+      if (d < 0.10) return 'low';
+      if (d < 0.50) return 'mid';
+      return 'high';
+    }
+
+    function deltaPillClass(v) {
+      if (v > 0) return 'delta-pill delta-pos';
+      if (v < 0) return 'delta-pill delta-neg';
+      return 'delta-pill delta-neu';
+    }
+
+    function deltaSign(v) {
+      if (v > 0) return '+' + v;
+      return String(v);
+    }
+
+    function renderDiff(diff) {
+      document.getElementById('deltaGPill').textContent = diff.delta_g.toFixed(3);
+      document.getElementById('deltaGPill').className = 'gscore-pill ' + bandForDeltaG(diff.delta_g);
+      document.getElementById('diffIdLabel').textContent = diff.diff_id;
+
+      const ancScore = diff.ancestor_genotype.genome_score;
+      const desScore = diff.descendant_genotype.genome_score;
+      const scoreShift = desScore - ancScore;
+      const shiftSign = scoreShift > 0 ? '+' : '';
+      document.getElementById('scoreShiftLine').innerHTML =
+        'Ancestor genome score: <code>' + ancScore.toFixed(3) + '</code> · Descendant: <code>' + desScore.toFixed(3) + '</code> · Shift: <strong style="color:' + (scoreShift > 0 ? 'var(--ok)' : scoreShift < 0 ? 'var(--danger)' : 'var(--muted)') + '">' + shiftSign + scoreShift.toFixed(3) + '</strong>';
+
+      document.getElementById('deltaFLine').textContent = diff.delta_f_explanation || '';
+
+      const z = diff.delta_z || {};
+      const axes = ['structure','depth','accuracy','concreteness','style','usefulness','risks'];
+      document.getElementById('deltaZGrid').innerHTML = axes.map(name => {
+        const v = z[name] || 0;
+        return '<span class="' + deltaPillClass(v) + '"><strong>' + escapeHtml(name) + '</strong> ' + deltaSign(v) + '</span>';
+      }).join('');
+
+      const tbody = document.getElementById('ledgerTable');
+      const changes = diff.genomic_diff || [];
+      tbody.innerHTML = changes.length ? changes.map(c => `
+        <tr>
+          <td><code>${escapeHtml(c.locus)}</code></td>
+          <td><span class="kind-badge ${escapeHtml(c.kind)}">${escapeHtml(c.kind)}</span></td>
+          <td><span class="status-badge ${escapeHtml(c.before_status)}">${escapeHtml(c.before_status)}</span></td>
+          <td><span class="status-badge ${escapeHtml(c.after_status)}">${escapeHtml(c.after_status)}</span></td>
+          <td>${escapeHtml(c.rationale || '')}</td>
+          <td><code style="font-size:11px; color:var(--muted);">${escapeHtml(c.ledger_id || '')}</code></td>
+        </tr>
+      `).join('') : '<tr><td colspan="6"><em style="color:var(--muted);">No locus changes — the descendant is genomically identical to the ancestor.</em></td></tr>';
+
+      const regs = diff.regressions || [];
+      document.getElementById('regressionList').innerHTML = regs.length
+        ? '<strong style="color:var(--danger);">Regressions:</strong><ul style="margin:6px 0 0 20px;">' + regs.map(r => '<li>' + escapeHtml(r) + '</li>').join('') + '</ul>'
+        : '<em style="color:var(--muted);">No regressions detected — no locus moved present/strong → missing/weak/n/a.</em>';
+
+      const risks = diff.new_risks || [];
+      document.getElementById('newRisksList').innerHTML = risks.length
+        ? '<strong style="color:var(--warn);">New risks introduced by descendant:</strong><ul style="margin:6px 0 0 20px;">' + risks.map(r => '<li>' + escapeHtml(r) + '</li>').join('') + '</ul>'
+        : '<em style="color:var(--muted);">No new risks introduced by descendant.</em>';
+
+      const next = diff.next_mutation_suggestion;
+      document.getElementById('nextMutation').innerHTML = next
+        ? '<strong>' + escapeHtml(next.mutation_type) + '</strong> → <code>' + escapeHtml(next.target_locus) + '</code><br><span>' + escapeHtml(next.patch) + '</span><br><small style="color:var(--muted);">' + escapeHtml(next.rationale) + '</small>'
+        : '<em style="color:var(--muted);">No further single-mutation suggestion — descendant already covers all core loci.</em>';
+
+      document.getElementById('diffResultCard').hidden = false;
+    }
+
+    async function runDiff() {
+      const a = document.getElementById('ancestorInput').value || '';
+      const b = document.getElementById('descendantInput').value || '';
+      if (!a.trim() || !b.trim()) {
+        setDiffStatus('error: both ancestor and descendant are required.');
+        return;
+      }
+      setDiffStatus('diffing...');
+      try {
+        const res = await fetch('/api/promptbio/diff', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ancestor: a, descendant: b, language: 'auto'})
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(t || ('HTTP ' + res.status));
+        }
+        const diff = await res.json();
+        renderDiff(diff);
+        setDiffStatus('done — ΔG ' + diff.delta_g.toFixed(3) + ', ' + (diff.genomic_diff || []).length + ' changes');
+      } catch (e) {
+        setDiffStatus('error: ' + e.message);
+      }
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('analyzeBtn').addEventListener('click', analyze);
       document.getElementById('exampleRawBtn').addEventListener('click', () => {
@@ -187,6 +367,11 @@
       });
       document.getElementById('exampleStructuredBtn').addEventListener('click', () => {
         document.getElementById('promptInput').value = STRUCTURED_EXAMPLE;
+      });
+      document.getElementById('diffBtn').addEventListener('click', runDiff);
+      document.getElementById('diffExampleBtn').addEventListener('click', () => {
+        document.getElementById('ancestorInput').value = RAW_EXAMPLE;
+        document.getElementById('descendantInput').value = STRUCTURED_EXAMPLE;
       });
     });
   </script>

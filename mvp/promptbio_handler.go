@@ -30,3 +30,29 @@ func promptbioMapHandler(w http.ResponseWriter, r *http.Request) {
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(out)
 }
+
+// v0.7.32 — Promptogenesis v0.2 Prompt Genome Diff HTTP surface.
+// See ingest-done/06-prompt-dna.md.done and handoff Section 6.4.
+func promptbioDiffHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	defer r.Body.Close()
+	var req promptbio.DiffRequest
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.Ancestor == "" || req.Descendant == "" {
+		http.Error(w, "ancestor and descendant are required", http.StatusBadRequest)
+		return
+	}
+	out := promptbio.DiffPrompts(req)
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
